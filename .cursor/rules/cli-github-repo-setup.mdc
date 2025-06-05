@@ -1,0 +1,178 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# GitHub Repository Setup - Cursor Rule
+
+## Purpose
+
+Create and configure a public GitHub repository for the current project with proper branch protection rules using GitHub CLI.
+
+## Prerequisites
+
+- GitHub CLI (`gh`) must be installed and authenticated
+- Project must be initialized as a Git repository
+- User must have appropriate GitHub account permissions
+
+## Commands & Workflow
+
+### 1. Check GitHub CLI Authentication
+```bash
+gh auth status
+```
+
+### 2. Initialize Git Repository (if needed)
+```bash
+git init
+git add .
+git commit -m "feat: initial commit"
+```
+
+### 3. Create Public GitHub Repository
+```bash
+gh repo create $(basename "$PWD") --public --source=. --remote=origin --push
+```
+
+**Alternative with custom description:**
+```bash
+gh repo create $(basename "$PWD") --public --description "PDF Vision Text Extraction - Web application for PDF text extraction with Azure OpenAI GPT-4 Vision" --source=. --remote=origin --push
+```
+
+### 4. Set Up Branch Protection Rules
+```bash
+# Protect main branch with PR requirements
+gh api repos/:owner/:repo/branches/main/protection \
+  --method PUT \
+  --field required_status_checks='{"strict":true,"contexts":[]}' \
+  --field enforce_admins=true \
+  --field required_pull_request_reviews='{"required_approving_review_count":1,"dismiss_stale_reviews":true,"require_code_owner_reviews":false}' \
+  --field restrictions=null
+```
+
+**Alternative simplified protection:**
+```bash
+gh api repos/:owner/:repo/branches/main/protection \
+  --method PUT \
+  --field required_pull_request_reviews='{"required_approving_review_count":1}' \
+  --field enforce_admins=false \
+  --field restrictions=null
+```
+
+### 5. Verify Repository Setup
+```bash
+# Check repository status
+gh repo view
+
+# Check branch protection status
+gh api repos/:owner/:repo/branches/main/protection
+```
+
+### 6. Set Up Additional Configuration
+```bash
+# Enable Issues and Wiki (if desired)
+gh api repos/:owner/:repo --method PATCH \
+  --field has_issues=true \
+  --field has_wiki=true \
+  --field has_projects=true
+
+# Add repository topics/tags
+gh api repos/:owner/:repo --method PATCH \
+  --field topics='["pdf-processing","text-extraction","azure-openai","react","fastapi","material-ui","typescript","python"]'
+```
+
+## Complete Setup Script
+
+```bash
+#!/bin/bash
+
+# GitHub Repository Setup Script
+set -e
+
+PROJECT_NAME=$(basename "$PWD")
+DESCRIPTION="PDF Vision Text Extraction - Web application for PDF text extraction with Azure OpenAI GPT-4 Vision"
+
+echo "🔍 Checking GitHub CLI authentication..."
+gh auth status
+
+echo "📦 Creating public repository: $PROJECT_NAME"
+gh repo create "$PROJECT_NAME" --public --description "$DESCRIPTION" --source=. --remote=origin --push
+
+echo "🔒 Setting up branch protection for main branch..."
+gh api "repos/:owner/$PROJECT_NAME/branches/main/protection" \
+  --method PUT \
+  --field required_pull_request_reviews='{"required_approving_review_count":1,"dismiss_stale_reviews":true}' \
+  --field enforce_admins=false \
+  --field restrictions=null
+
+echo "🏷️ Adding repository topics..."
+gh api "repos/:owner/$PROJECT_NAME" --method PATCH \
+  --field topics='["pdf-processing","text-extraction","azure-openai","react","fastapi","material-ui","typescript","python"]'
+
+echo "🎉 Repository setup complete!"
+echo "📍 Repository URL: $(gh repo view --json url --jq .url)"
+
+# Display protection status
+echo "🛡️ Branch protection status:"
+gh api "repos/:owner/$PROJECT_NAME/branches/main/protection" --jq '.required_pull_request_reviews'
+```
+
+## Branch Protection Features Enabled
+
+- **Pull Request Reviews Required**: At least 1 approving review needed
+- **Dismiss Stale Reviews**: New commits dismiss previous approvals
+- **No Direct Pushes**: All changes must go through pull requests
+- **Admin Enforcement**: Configurable (set to false for flexibility)
+
+## Usage Instructions
+
+1. **Run Authentication Check**: Ensure GitHub CLI is properly authenticated
+2. **Execute Repository Creation**: Use the complete setup script or individual commands
+3. **Verify Setup**: Check repository settings and branch protection rules
+4. **Test Protection**: Try pushing directly to main (should be blocked)
+
+## Error Handling
+
+- **Authentication Issues**: Run `gh auth login` to re-authenticate
+- **Repository Already Exists**: Delete existing repo or use different name
+- **Permission Errors**: Ensure account has proper permissions
+- **Branch Protection Fails**: Check if main branch exists and has commits
+
+## Post-Setup Workflow
+
+1. **Create Feature Branch**: `git checkout -b feature/your-feature`
+2. **Make Changes**: Develop your feature
+3. **Push Branch**: `git push origin feature/your-feature`
+4. **Create PR**: `gh pr create --title "feat: your feature" --body "Description"`
+5. **Review & Merge**: Get approval and merge via GitHub interface
+
+## Repository Configuration
+
+The setup creates a repository with:
+- Public visibility
+- Issues enabled
+- Wiki enabled
+- Projects enabled
+- Relevant topic tags
+- Branch protection on main
+- PR requirements enforced
+
+## Advanced Protection Options
+
+For stricter protection, use:
+```bash
+gh api repos/:owner/:repo/branches/main/protection \
+  --method PUT \
+  --field required_status_checks='{"strict":true,"contexts":["ci/tests"]}' \
+  --field enforce_admins=true \
+  --field required_pull_request_reviews='{"required_approving_review_count":2,"dismiss_stale_reviews":true,"require_code_owner_reviews":true}' \
+  --field restrictions='{"users":[],"teams":[]}'
+```
+
+This enables:
+- Required status checks (CI/tests must pass)
+- Admin enforcement (even admins follow rules)
+- 2 required reviewers
+- Code owner reviews required
+- No user/team restrictions
+

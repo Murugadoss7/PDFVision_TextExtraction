@@ -1,0 +1,108 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# PDF Vision Text Extraction - Project Rules
+
+## 1. Project Overview
+
+goal: A web application that allows users to upload PDF documents and extract text while preserving formatting. Features a side-by-side viewer with synchronized scrolling, text editing capabilities, and export functionality using Azure OpenAI GPT-4 Vision for text extraction.
+type: Full-Stack Web Application (React Frontend + FastAPI Backend)
+key features:
+- PDF upload with drag-and-drop interface and validation
+- Text extraction using Azure OpenAI GPT-4 Vision model
+- Split-screen viewer with synchronized PDF and text display
+- Text correction workflow with advanced editing capabilities
+- Word document export with formatting preservation
+- Material UI theme support (light/dark mode)
+- Document management and search functionality
+
+## 2. Technology Stack
+
+language(s): JavaScript/TypeScript (React 18), Python 3.8+ (FastAPI backend)
+framework(s): React 18 with Vite (frontend), FastAPI 0.104.1 (backend)
+ui library/styling: Material UI 7.1.0 (@mui/material, @emotion/react, @emotion/styled)
+database(s): SQLite (development) via SQLAlchemy 2.0.23, PostgreSQL ready for production
+state management: React Context API (no dedicated state management library)
+api layer: REST API via FastAPI with automatic OpenAPI documentation
+key libraries:
+- react-pdf 7.3.3 (PDF rendering)
+- react-resizable-panels 1.0.10 (split-screen layout)
+- react-dropzone 14.2.3 (file upload)
+- axios 1.6.0 (HTTP client)
+- pymupdf 1.23.4 (PDF processing)
+- python-docx 0.8.11 (Word export)
+- pillow 10.0.1 (image processing)
+
+## 3. Project Structure
+
+main source directory: frontend/src/ (React), backend/app/ (FastAPI)
+core directories:
+- components/: React UI components organized by feature (PDFViewer/, TextEditor/, ToolBar/, CorrectionWorkflow/, UI/)
+- services/: Business logic and external integrations (backend/app/services/)
+- api/: REST API endpoints (backend/app/api/routes/)
+- contexts/: React Context providers for state management
+- db/: Database models and schemas (SQLAlchemy + Pydantic)
+- utils/: Shared utility functions
+- docs/: Comprehensive project documentation with diagrams
+diagram/link: docs/diagrams/system-architecture-flow.md
+
+## 4. Coding Standards & Conventions
+
+language usage: Functional React components with hooks, async/await for async operations, ESLint rules for code quality, Python with type hints and FastAPI conventions
+naming conventions:
+- files/folders: PascalCase for React components, snake_case for Python modules, kebab-case for CSS/docs
+- components: PascalCase (PDFViewer.jsx, TextEditor.jsx)
+- variables/functions: camelCase (JavaScript), snake_case (Python)
+- types/interfaces: PascalCase for classes and models
+code style/formatting: ESLint 8.54.0 for JavaScript, no Prettier config found (uses ESLint rules)
+comments: English only, JSDoc for public APIs when needed, minimal inline comments
+imports: Relative paths for local modules, grouped imports (React, third-party, local)
+
+## 5. Key Principles & Best Practices
+
+- Separation of Concerns: Each file should have a single, well-defined purpose
+- Dependency Direction: Dependencies should flow from UI → Services → Data
+- Feature Grouping: Related components should be grouped together
+- Configuration Management: All environment-specific values in .env files
+- Error Boundaries: Implement error handling at appropriate architectural levels
+
+## 6. Testing
+
+framework: Vitest 1.0.0 (frontend), pytest (backend)
+types: Unit tests for services, integration tests for API endpoints, manual testing for UI workflows
+location: Co-located with source files (*.test.js, *.spec.py), backend/tests/ directory
+coverage expectations: [N/A - no specific coverage requirements documented]
+
+## 7. Tooling & Workflow
+
+package manager: npm (package-lock.json present in frontend), pip with requirements.txt (backend)
+build command(s): `npm run build` (frontend), no specific build command for backend (FastAPI runs directly)
+run command(s) (dev): `npm run dev` (frontend on port 3000), `uvicorn app.main:app --reload` (backend)
+version control: Git (no specific conventional commit requirements documented)
+ci/cd: [N/A - no CI/CD configuration found in project]
+ide recommendations: [N/A - no .vscode/ configuration found]
+
+## 8. Database / API Guidelines
+
+- Use SQLAlchemy ORM methods for database operations
+- RESTful API design with FastAPI automatic documentation
+- Environment variables for database URLs and external service keys
+- FastAPI Pydantic schemas for request/response validation
+- CORS configuration for frontend-backend communication
+
+## 9. Specific Feature Rules
+
+- **Azure OpenAI Integration**: Use Azure OpenAI GPT-4 Vision for text extraction, configure via AZURE_OPENAI_* environment variables
+- **PDF Processing**: Use PyMuPDF (fitz) for PDF parsing and image extraction
+- **Material UI**: Consistent use of Material UI components, theme system for dark/light mode
+- **File Storage**: Organized directory structure (uploads/, extracted/, exports/) for different file types
+- **Error Handling**: Comprehensive error handling for file operations and API calls
+
+## 10. Rule Referencing
+
+- See [react-rules.mdc](mdc:.cursor/rules/react-rules.mdc) for React-specific development guidelines
+- Follow [docs-diagram.mdc](mdc:.cursor/rules/docs-diagram.mdc) for creating project diagrams
+- Use [docs-structure.mdc](mdc:.cursor/rules/docs-structure.mdc) for documentation organization
+
