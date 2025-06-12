@@ -310,3 +310,223 @@ uvicorn app.main:app --reload
 - **Database**: SQLite (development), PostgreSQL (production ready)
 - **Development**: pytest for testing, ESLint for code quality
 - **Correction Workflow**: Complete two-phase editing system with diff algorithms 
+
+## Phase 6: Enhanced Text Editing and Alignment System (2024)
+
+### 6.1 CKEditor 5 Integration and Enhancement
+
+#### 6.1.1 CKEditor Configuration
+- **Version Upgrade**: Migrate from Classic build to DecoupledEditor v42.0.0
+- **Plugin Integration**: Enable alignment plugin for center, right, justify alignment
+- **Toolbar Configuration**: Comprehensive editing tools with alignment controls
+- **Content Preservation**: Minimal HTML sanitization to preserve LLM formatting
+
+#### 6.1.2 HTML Preprocessing Implementation
+- **Location**: `frontend/src/components/TextEditor/CKTextEditor.jsx`
+- **Purpose**: Convert LLM div-level alignment to CKEditor-compatible paragraph alignment
+- **Pattern Matching**:
+  ```javascript
+  // Convert: <div style="text-align: center"><p>content</p></div>
+  // To: <p style="text-align: center;">content</p>
+  const divCenterPattern = /<div[^>]*style[^>]*text-align:\s*center[^>]*>([\s\S]*?)<\/div>/gi;
+  processedContent = processedContent.replace(divCenterPattern, (match, innerContent) => {
+    return innerContent.replace(/<p([^>]*)>/gi, '<p$1 style="text-align: center;">');
+  });
+  ```
+
+#### 6.1.3 Always-On WYSIWYG Mode
+- **Editor State**: Disable view/edit mode switching
+- **Direct Editing**: Immediate text editing capabilities
+- **Auto-save Integration**: Page-level save functionality
+- **Content Synchronization**: Live updates between editor and backend
+
+#### 6.1.4 Alignment Support Implementation
+- **Supported Alignments**: left (default), center, right, justify
+- **Style Processing**: Both inline styles and CSS class support
+- **Content Validation**: Preserve exact LLM formatting during editing
+- **Debug Mode**: HTML preview functionality for troubleshooting
+
+### 6.2 Enhanced Word Export Pipeline
+
+#### 6.2.1 HTML Parsing Enhancement
+- **Location**: `backend/app/services/wordextract.py`
+- **Library**: BeautifulSoup4 for robust HTML parsing
+- **Multi-format Support**:
+  - Inline styles: `style="text-align: center;"`
+  - CSS classes: `class="ql-align-center"`
+  - Nested elements: `<div style="text-align: center"><p>content</p></div>`
+
+#### 6.2.2 Alignment Extraction Algorithm
+```python
+def parse_html_to_word_format(html_content: str) -> List[Dict[str, Any]]:
+    soup = BeautifulSoup(html_content, 'html.parser')
+    
+    # Handle div containers with alignment
+    for div_element in soup.find_all('div'):
+        if div_element.get('style') and 'text-align:' in div_element.get('style'):
+            # Extract alignment and apply to child paragraphs
+            alignment = extract_alignment_from_style(div_element.get('style'))
+            apply_alignment_to_children(div_element, alignment)
+```
+
+#### 6.2.3 Word Document Generation
+- **Paragraph Alignment**: Direct application to Word paragraph objects
+- **Alignment Mapping**:
+  ```python
+  if alignment == "center":
+      current_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+  elif alignment == "right":
+      current_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.RIGHT
+  elif alignment == "justify":
+      current_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
+  ```
+
+#### 6.2.4 Data Validation Fix
+- **Critical Fix**: Preserve alignment field in WordGenerator data validation
+- **Before (broken)**: alignment field missing from clean_item dictionary
+- **After (fixed)**: `"alignment": item.get("alignment", "left")`
+- **Impact**: Ensures alignment data flows through entire pipeline
+
+### 6.3 Comprehensive Logging System
+
+#### 6.3.1 PDFVisionLogger Architecture
+- **Location**: `backend/app/utils/logging_config.py`
+- **Design**: Centralized logging for entire PDF processing pipeline
+- **Log Categories**:
+  - **Pipeline Logger**: Main workflow operations
+  - **Data Logger**: Content transformation tracking
+  - **Database Logger**: CRUD operations
+  - **Error Logger**: Exception tracking with context
+
+#### 6.3.2 Request ID Tracking
+```python
+def generate_request_id() -> str:
+    return str(uuid.uuid4())
+
+# Usage throughout pipeline
+request_id = generate_request_id()
+pdf_vision_logger.log_upload_start(request_id, filename, file_size)
+```
+
+#### 6.3.3 Data Flow Logging
+- **Upload Phase**: File validation, document creation, page extraction
+- **LLM Processing**: Azure OpenAI requests, response parsing, HTML generation
+- **Database Operations**: All CRUD with data samples and alignment tracking
+- **User Edits**: CKEditor changes, save operations, content updates
+- **Word Export**: Block processing, alignment application, document generation
+
+#### 6.3.4 Logging Integration Points
+```python
+# In upload.py
+pdf_vision_logger.log_upload_start(request_id, filename, file_size)
+
+# In text_extraction.py  
+pdf_vision_logger.log_llm_processing_start(request_id, page_id, page_number)
+pdf_vision_logger.log_llm_data(request_id, page_id, raw_text, formatted_text)
+
+# In wordextract.py
+pdf_vision_logger.log_word_export_data(request_id, document_id, blocks_count, blocks_sample)
+```
+
+#### 6.3.5 Debugging Tools
+- **Interactive Log Viewer**: `view_logs.py` for real-time monitoring
+- **Test Suite**: `test_logging.py` for validation
+- **Log Analysis**: Search and filter capabilities for troubleshooting
+
+### 6.4 Alignment Debugging and Validation
+
+#### 6.4.1 Debug Scripts
+- **`debug_alignment.py`**: Test HTML-to-Word alignment conversion
+- **`test_generic_alignment.py`**: Validate multiple alignment formats
+- **Usage**: Standalone testing of alignment preservation
+
+#### 6.4.2 Pipeline Validation
+1. **LLM Output Verification**: Confirm HTML contains proper alignment tags
+2. **HTML Parsing Validation**: Verify BeautifulSoup extracts alignment correctly
+3. **Database Storage Check**: Ensure alignment field persists in database
+4. **CKEditor Processing**: Validate HTML preprocessing maintains alignment
+5. **Word Generation Verification**: Confirm paragraph alignment application
+
+#### 6.4.3 Common Debugging Patterns
+```bash
+# Check LLM output in data_flow.log
+grep "LLM_FORMATTED_TEXT" logs/data_flow.log
+
+# Verify alignment extraction
+grep "alignment=" logs/data_flow.log
+
+# Monitor Word export process
+grep "WORD_EXPORT" logs/pipeline.log
+```
+
+### 6.5 Performance Optimizations
+
+#### 6.5.1 Caching Strategy
+- **HTML Preprocessing**: Cache processed content to avoid re-computation
+- **Alignment Extraction**: Store alignment mappings for reuse
+- **Database Queries**: Optimize alignment field storage and retrieval
+
+#### 6.5.2 Memory Management
+- **Large Document Handling**: Page-by-page processing for memory efficiency
+- **Log File Rotation**: Automatic cleanup to prevent disk space issues
+- **Garbage Collection**: Proper cleanup of cached alignment data
+
+#### 6.5.3 API Response Optimization
+- **Structured Responses**: Consistent alignment data format across endpoints
+- **Error Handling**: Detailed error messages for alignment-related issues
+- **Progress Tracking**: Real-time feedback for long-running operations
+
+## Implementation Checklist
+
+### ✅ Core Features (Completed)
+- [x] PDF upload and validation
+- [x] Azure OpenAI GPT-4 Vision integration
+- [x] Split-screen PDF/text viewer
+- [x] Complete OCR correction workflow
+- [x] Material UI theming and responsive design
+
+### ✅ Enhanced Features (2024)
+- [x] **CKEditor 5 DecoupledEditor integration**
+- [x] **HTML preprocessing for alignment conversion**
+- [x] **Always-on WYSIWYG editing mode**
+- [x] **Comprehensive logging system (PDFVisionLogger)**
+- [x] **Enhanced Word export with full alignment support**
+- [x] **BeautifulSoup4 HTML parsing for alignment extraction**
+- [x] **Request ID tracking for end-to-end debugging**
+- [x] **Debug tools and validation scripts**
+
+### 🚀 Quality Assurance
+- [x] **End-to-end alignment preservation testing**
+- [x] **Comprehensive logging of data flow**
+- [x] **Debug scripts for standalone testing**
+- [x] **Performance monitoring and optimization**
+- [x] **Error handling and recovery mechanisms**
+
+### 📊 Monitoring and Maintenance
+- [x] **Log file management and rotation**
+- [x] **Performance metrics tracking**
+- [x] **Alignment validation tools**
+- [x] **Documentation updates and examples**
+
+## Troubleshooting Guide
+
+### Alignment Issues
+1. **Check LLM HTML Output**: Verify proper `<div style="text-align: center">` tags
+2. **Validate HTML Preprocessing**: Confirm conversion to paragraph-level alignment
+3. **Debug CKEditor**: Use HTML preview to verify processed content
+4. **Check Word Generation**: Review alignment application in Word document
+5. **Analyze Logs**: Search data_flow.log for alignment field preservation
+
+### Logging Issues
+1. **Verify LOG_LEVEL**: Set environment variable for appropriate verbosity
+2. **Check Log Files**: Ensure logs directory exists and files are writable
+3. **Request ID Tracking**: Verify unique request IDs for pipeline tracing
+4. **Log Rotation**: Monitor disk space and implement rotation if needed
+
+### Performance Issues
+1. **Large Document Processing**: Monitor memory usage during page extraction
+2. **Database Query Optimization**: Check slow queries in database.log
+3. **API Response Times**: Track endpoint performance in pipeline.log
+4. **Cache Efficiency**: Verify caching strategy reduces redundant processing
+
+This implementation guide provides comprehensive coverage of all features including recent enhancements for alignment preservation and logging. The system now offers robust text editing capabilities with full formatting preservation from LLM extraction through Word document export. 

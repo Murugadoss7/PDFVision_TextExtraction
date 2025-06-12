@@ -1,37 +1,42 @@
 # PDF Vision Text Extractor
 
-A web application that allows users to upload PDF documents and extract text while preserving formatting. The application features a sophisticated OCR correction workflow, side-by-side viewer with synchronized scrolling, text editing capabilities, and export functionality.
+A comprehensive web application that enables users to upload PDF documents and extract text with complete formatting preservation. The application features an advanced two-phase OCR correction workflow, comprehensive logging system, split-screen viewer with synchronized navigation, intelligent text editing with alignment preservation, and enhanced Word document export functionality.
 
 ## Features
 
 - ✅ PDF Upload with validation and progress tracking
-- ✅ Text extraction using Azure OpenAI's GPT-4 Vision model
-- ✅ Split-screen viewer (PDF on left, extracted text on right)
-- ✅ Page navigation with synchronized views
-- ✅ Text editing with formatting options
-- ✅ **Complete two-phase OCR correction workflow**
-- ✅ **Advanced text comparison with diff highlighting**
-- ✅ **Bulk correction operations (Ignore All, Replace All)**
-- ✅ **Individual difference application and manual editing**
-- ✅ **PDF preview with synchronized navigation**
-- ✅ Word document export with corrected text priority
-- ✅ Search functionality within extracted text
-- ✅ Light/Dark theme support
-- ✅ Responsive UI with Material UI
-- ✅ Document management with correction status tracking
+- ✅ Text extraction using Azure OpenAI's GPT-4 Vision model with HTML formatting
+- ✅ Split-screen viewer with synchronized navigation (PDF on left, extracted text on right)
+- ✅ Page navigation with automatic synchronization
+- ✅ **Enhanced CKEditor 5 with WYSIWYG editing and alignment preservation**
+- ✅ **Complete two-phase OCR correction workflow with Document B integration**
+- ✅ **Advanced text comparison with intelligent diff highlighting**
+- ✅ **Bulk correction operations (Ignore All, Replace All, Revert)**
+- ✅ **Individual difference application with precise control**
+- ✅ **Final review phase with PDF preview and manual editing**
+- ✅ **Comprehensive logging system for entire processing pipeline**
+- ✅ **Enhanced Word document export with full alignment support**
+- ✅ Search functionality with real-time highlighting
+- ✅ Light/Dark theme support with Material UI
+- ✅ Responsive design optimized for all device sizes
+- ✅ Document management with correction workflow status tracking
+- ✅ **Debug tools and performance monitoring**
 
 ## Tech Stack
 
-- **Frontend**: React 18 with Vite and Material UI components
-- **Backend**: FastAPI with comprehensive correction endpoints
-- **Database**: SQLite (development), PostgreSQL ready
-- **PDF Processing**: PyMuPDF (fitz) for text extraction and layer processing
-- **Text Extraction**: Azure OpenAI GPT-4 Vision model
-- **Text Comparison**: difflib algorithm for accurate diff generation
-- **PDF Rendering**: react-pdf
-- **Split View**: react-resizable-panels
-- **Document Export**: python-docx library
-- **File Upload**: react-dropzone with progress tracking
+- **Frontend**: React 18 with Vite, Material UI components, and CKEditor 5
+- **Backend**: FastAPI with comprehensive correction and logging endpoints
+- **Database**: SQLite (development), PostgreSQL ready with correction workflow tables
+- **PDF Processing**: PyMuPDF (fitz) for text extraction, layer processing, and Document B handling
+- **Text Extraction**: Azure OpenAI GPT-4 Vision model with HTML formatting preservation
+- **Text Comparison**: Advanced difflib algorithm with structured difference detection
+- **Text Editing**: CKEditor 5 DecoupledEditor with alignment preprocessing
+- **PDF Rendering**: react-pdf with synchronized navigation
+- **Layout Management**: react-resizable-panels for responsive split-screen views
+- **Document Export**: Enhanced python-docx with BeautifulSoup4 for alignment preservation
+- **File Upload**: react-dropzone with comprehensive progress tracking
+- **HTML Processing**: DOMPurify, htmldiff-js for diff visualization
+- **Logging**: Custom PDFVisionLogger with structured logging across entire pipeline
 
 ## OCR Correction Workflow
 
@@ -60,12 +65,39 @@ The application includes a sophisticated two-phase OCR correction workflow that 
 ### Correction Workflow Features
 - **Two-Panel Interface**: Intuitive layout for comparing and editing text
 - **Real-time Diff Highlighting**: Color-coded differences with detailed descriptions
-- **Bulk Operations**: Efficient correction of entire pages
+- **Bulk Operations**: Efficient correction of entire pages (Ignore All, Replace All, Revert)
 - **Individual Difference Handling**: Precise control over specific changes
 - **Progress Tracking**: Visual completion indicators across all document pages
 - **State Management**: Workflow state preserved during navigation
-- **Error Prevention**: Unsaved changes warnings and validation
+- **Error Prevention**: Unsaved changes warnings and comprehensive validation
 - **Export Integration**: Seamless Word document generation with corrections
+- **Search Functionality**: Real-time search with highlighting in both text panels
+- **PDF Preview Integration**: Synchronized viewing of original scanned document
+
+## Comprehensive Logging System
+
+The application includes a robust logging system that tracks the entire document processing pipeline for debugging and monitoring:
+
+### Log Files Structure
+- **`logs/pipeline.log`**: Main operations and workflow progress tracking
+- **`logs/data_flow.log`**: Data transformation and content processing
+- **`logs/database.log`**: Database operations and query logging
+- **`logs/errors.log`**: Error tracking with context and stack traces
+
+### Logged Operations
+- **Upload Phase**: File validation, document creation, page extraction
+- **LLM Processing**: Azure OpenAI requests, response processing, HTML generation
+- **Database Operations**: All CRUD operations with data samples
+- **UI Rendering**: Content preparation and delivery to frontend
+- **User Edits**: CKEditor changes, save operations, content updates
+- **Word Export**: Block processing, alignment application, document generation
+- **Correction Workflow**: Document B processing, text comparison, user corrections
+
+### Debugging Tools
+- **Interactive Log Viewer**: `backend/view_logs.py` for real-time monitoring
+- **Request ID Tracking**: End-to-end pipeline tracing with unique identifiers
+- **Performance Monitoring**: Operation timing and resource usage tracking
+- **Test Scripts**: Comprehensive logging validation and testing utilities
 
 ## Project Structure
 
@@ -73,32 +105,57 @@ The project follows a structured architecture as outlined in `docs/systemArchite
 
 ```
 PDFVision_TextExtraction/
-├── frontend/          # React application (Vite + Material UI)
+├── frontend/          # React application (Vite + Material UI + CKEditor 5)
 │   ├── src/           # Source code
 │   │   ├── components/# UI components
 │   │   │   ├── CorrectionWorkflow/  # OCR correction workflow components
-│   │   │   │   ├── CorrectionDocumentUpload.jsx  # Document B upload
-│   │   │   │   ├── ComparisonView.jsx           # Phase 1: Text comparison
-│   │   │   │   └── FinalReviewView.jsx          # Phase 2: Final review
+│   │   │   │   ├── CorrectionDocumentUpload.jsx  # Document B upload interface
+│   │   │   │   ├── ComparisonView.jsx            # Phase 1: Text comparison & bulk editing
+│   │   │   │   ├── FinalReviewView.jsx           # Phase 2: Final review & manual editing
+│   │   │   │   ├── HtmlDiffDisplay.jsx           # Diff visualization component
+│   │   │   │   ├── DiffCard.jsx                  # Individual difference display
+│   │   │   │   ├── DocumentPanel.jsx             # Document display panel
+│   │   │   │   ├── DifferencePanel.jsx           # Difference management panel
+│   │   │   │   └── PageNavigation.jsx            # Page navigation controls
 │   │   │   ├── PDFViewer/          # PDF rendering components
 │   │   │   ├── TextEditor/         # Text editing components
-│   │   │   ├── ToolBar/            # Navigation controls
+│   │   │   │   ├── CKTextEditor.jsx              # Enhanced CKEditor 5 with alignment
+│   │   │   │   └── quilEditor.jsx                # Alternative editor
+│   │   │   ├── ToolBar/            # Navigation controls (deprecated components)
 │   │   │   └── UI/                 # Reusable UI components
-│   │   ├── contexts/  # Context providers
+│   │   ├── contexts/  # Context providers with correction workflow state
+│   │   ├── hooks/     # Custom React hooks (useHighlighting.js)
+│   │   ├── utils/     # Utility functions (stringUtils.js)
 │   │   └── theme.js   # Material UI theme configuration
-└── backend/           # FastAPI application
+└── backend/           # FastAPI application with comprehensive logging
     ├── app/           # Core application code
     │   ├── api/routes/# API endpoints
-    │   │   └── correction.py        # OCR correction endpoints
-    │   ├── services/  # Business logic
-    │   │   ├── editable_pdf_service.py    # Document B text extraction
-    │   │   └── text_comparison_service.py # Diff algorithm
+    │   │   ├── correction.py        # Complete OCR correction workflow endpoints
+    │   │   ├── documents.py         # Document management with correction status
+    │   │   └── upload.py            # Enhanced upload with logging
+    │   ├── services/  # Business logic services
+    │   │   ├── editable_pdf_service.py    # Document B text extraction service
+    │   │   ├── text_comparison_service.py # Advanced diff algorithm service
+    │   │   ├── text_extraction.py         # Enhanced LLM processing with logging
+    │   │   ├── pdf_processing.py          # PDF processing with logging
+    │   │   └── wordextract.py             # Enhanced Word export with alignment
+    │   ├── utils/     # Utility functions
+    │   │   └── logging_config.py          # Comprehensive logging system (PDFVisionLogger)
     │   └── db/        # Database models
-    │       └── models.py            # Includes correction tables
+    │       └── models.py            # Enhanced with correction workflow tables
     ├── uploads/       # Uploaded PDF files
-    │   └── correction_inputs/       # Editable PDFs for correction
+    │   └── correction_inputs/       # Editable PDFs for correction workflow
+    ├── logs/          # Comprehensive logging files (NEW)
+    │   ├── pipeline.log             # Main operations and workflow progress
+    │   ├── data_flow.log            # Data transformation tracking
+    │   ├── database.log             # Database operations logging
+    │   └── errors.log               # Error tracking and debugging
     ├── extracted/     # Extracted page images
-    └── exports/       # Exported Word documents
+    ├── exports/       # Enhanced Word document exports
+    ├── temp_exports/  # Temporary export files
+    ├── view_logs.py   # Interactive log viewer utility (NEW)
+    ├── test_logging.py# Logging system validation (NEW)
+    └── debug_*.py     # Debug and alignment testing scripts (NEW)
 ```
 
 ## Setup Instructions
@@ -144,8 +201,12 @@ PDFVision_TextExtraction/
    # CORS settings
    ALLOWED_ORIGINS=http://localhost:5173
    
-   # Logging Configuration
-   LOG_LEVEL=INFO
+   # Comprehensive Logging Configuration
+   LOG_LEVEL=INFO                    # DEBUG, INFO, WARNING, ERROR, CRITICAL
+   ENABLE_PIPELINE_LOGGING=true     # Enable pipeline operations logging
+   ENABLE_DATA_FLOW_LOGGING=true    # Enable data transformation logging
+   ENABLE_DATABASE_LOGGING=true     # Enable database operations logging
+   ENABLE_ERROR_LOGGING=true        # Enable error tracking logging
    ```
 
 5. Run the development server:
@@ -175,6 +236,50 @@ PDFVision_TextExtraction/
 ## Azure OpenAI Configuration
 
 This application uses Azure OpenAI for text extraction. See `docs/azure_openai_setup.md` for detailed instructions on setting up your Azure OpenAI resources.
+
+## Debugging and Monitoring Tools
+
+The application includes several tools for debugging and monitoring the document processing pipeline:
+
+### Log Monitoring
+```bash
+# Interactive log viewer with real-time updates
+cd backend
+python view_logs.py
+
+# View specific log types
+python view_logs.py --log-type pipeline
+python view_logs.py --log-type data_flow
+python view_logs.py --log-type errors
+
+# Search logs for specific patterns
+python view_logs.py --search "alignment"
+python view_logs.py --search "request_id=ABC123"
+```
+
+### Testing and Validation
+```bash
+# Test logging system functionality
+python test_logging.py
+
+# Test alignment preservation
+python debug_alignment.py
+
+# Generic alignment testing
+python test_generic_alignment.py
+```
+
+### Log File Analysis
+- **Pipeline Logs**: Track document processing workflow and user actions
+- **Data Flow Logs**: Monitor content transformations and LLM processing
+- **Database Logs**: Review CRUD operations and data integrity
+- **Error Logs**: Debug issues with detailed stack traces and context
+
+### Performance Monitoring
+- Request ID tracking for end-to-end pipeline tracing
+- Operation timing and resource usage monitoring
+- Memory usage tracking for large document processing
+- API response time analysis
 
 ## Usage Guide
 

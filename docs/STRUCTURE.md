@@ -32,17 +32,29 @@ frontend/
 │   └── 📄 index.html              # Main HTML template
 ├── 📂 src/                         # Source code
 │   ├── 📂 components/              # React components
-│   │   ├── 📂 CorrectionWorkflow/  # Text correction components
+│   │   ├── 📂 CorrectionWorkflow/  # OCR correction workflow components (ENHANCED)
+│   │   │   ├── 📄 CorrectionDocumentUpload.jsx  # Document B upload interface
+│   │   │   ├── 📄 ComparisonView.jsx            # Phase 1: Text comparison & bulk editing
+│   │   │   ├── 📄 FinalReviewView.jsx           # Phase 2: Final review & manual editing
+│   │   │   ├── 📄 HtmlDiffDisplay.jsx           # Diff visualization component
+│   │   │   ├── 📄 DiffCard.jsx                  # Individual difference display
+│   │   │   ├── 📄 DocumentPanel.jsx             # Document display panel
+│   │   │   ├── 📄 DifferencePanel.jsx           # Difference management panel
+│   │   │   └── 📄 PageNavigation.jsx            # Page navigation controls
 │   │   ├── 📂 PDFViewer/          # PDF rendering components
-│   │   ├── 📂 TextEditor/         # Text editing components
+│   │   ├── 📂 TextEditor/         # Text editing components (ENHANCED)
+│   │   │   ├── 📄 CKTextEditor.jsx              # Enhanced CKEditor 5 with alignment
+│   │   │   └── 📄 quilEditor.jsx                # Alternative editor
 │   │   ├── 📂 ToolBar/            # Navigation and control components
 │   │   ├── 📂 UI/                 # Reusable UI components
 │   │   ├── 📄 HomePage.jsx        # Main landing page
 │   │   └── 📄 PDFUpload.jsx       # File upload interface
-│   ├── 📂 contexts/               # React Context providers
-│   ├── 📂 hooks/                  # Custom React hooks
+│   ├── 📂 contexts/               # React Context providers (with correction workflow state)
+│   ├── 📂 hooks/                  # Custom React hooks (NEW)
+│   │   └── 📄 useHighlighting.js  # Text highlighting and search functionality
 │   ├── 📂 services/               # API communication layer
-│   ├── 📂 utils/                  # Utility functions and helpers
+│   ├── 📂 utils/                  # Utility functions and helpers (NEW)
+│   │   └── 📄 stringUtils.js      # String manipulation and formatting utilities
 │   ├── 📄 App.jsx                 # Main application component
 │   ├── 📄 index.jsx               # Application entry point
 │   ├── 📄 index.css               # Global styles
@@ -89,33 +101,48 @@ backend/
 ├── 📂 app/                         # Core application code
 │   ├── 📂 api/                     # API layer
 │   │   └── 📂 routes/             # API route handlers
-│   │       ├── 📄 upload.py       # File upload endpoints
-│   │       ├── 📄 documents.py    # Document management
-│   │       └── 📄 extract.py      # Text extraction endpoints
+│   │       ├── 📄 upload.py       # Enhanced file upload endpoints with logging
+│   │       ├── 📄 documents.py    # Document management with correction status
+│   │       ├── 📄 extract.py      # Text extraction endpoints
+│   │       └── 📄 correction.py   # Complete OCR correction workflow endpoints (NEW)
 │   ├── 📂 core/                   # Core application logic
 │   │   ├── 📄 config.py           # Configuration management
 │   │   └── 📄 security.py         # Authentication and security
 │   ├── 📂 db/                     # Database layer
 │   │   ├── 📄 database.py         # Database connection
-│   │   ├── 📄 models.py           # SQLAlchemy models
-│   │   └── 📄 schemas.py          # Pydantic schemas
-│   ├── 📂 services/               # Business logic layer
-│   │   ├── 📄 pdf_processing.py   # PDF manipulation
-│   │   ├── 📄 text_extraction.py  # AI text extraction
-│   │   └── 📄 export_service.py   # Document export
-│   ├── 📂 utils/                  # Utility functions
+│   │   ├── 📄 models.py           # Enhanced SQLAlchemy models with correction tables
+│   │   └── 📄 schemas.py          # Enhanced Pydantic schemas with correction workflows
+│   ├── 📂 services/               # Business logic layer (ENHANCED)
+│   │   ├── 📄 pdf_processing.py   # PDF manipulation with logging
+│   │   ├── 📄 text_extraction.py  # AI text extraction with comprehensive logging
+│   │   ├── 📄 export_service.py   # Document export
+│   │   ├── 📄 wordextract.py      # Enhanced Word generation with alignment support
+│   │   ├── 📄 editable_pdf_service.py    # Document B text extraction service (NEW)
+│   │   └── 📄 text_comparison_service.py # Advanced diff algorithm service (NEW)
+│   ├── 📂 utils/                  # Utility functions (ENHANCED)
 │   │   ├── 📄 file_utils.py       # File operations
-│   │   └── 📄 validation.py       # Input validation
+│   │   ├── 📄 validation.py       # Input validation
+│   │   └── 📄 logging_config.py   # Comprehensive logging system (PDFVisionLogger) (NEW)
 │   └── 📄 main.py                 # FastAPI application entry
 ├── 📂 database/                   # SQLite database files
-│   └── 📄 pdf_extractor.db        # Main database
+│   └── 📄 pdf_extractor.db        # Main database with correction workflow tables
 ├── 📂 uploads/                    # Uploaded PDF files
+│   └── 📂 correction_inputs/      # Editable PDFs for correction workflow (NEW)
 ├── 📂 extracted/                  # Extracted page images
-├── 📂 exports/                    # Generated Word documents
+├── 📂 exports/                    # Enhanced Word document exports
+├── 📂 temp_exports/               # Temporary export files (NEW)
+├── 📂 logs/                       # Comprehensive logging system (NEW)
+│   ├── 📄 pipeline.log            # Main operations and workflow progress
+│   ├── 📄 data_flow.log           # Data transformation and content tracking
+│   ├── 📄 database.log            # Database operations and queries
+│   └── 📄 errors.log              # Error tracking with context and stack traces
 ├── 📂 tests/                      # Test files
 ├── 📂 venv/                       # Python virtual environment
-├── 📄 requirements.txt            # Python dependencies
-└── 📄 .env                        # Environment variables
+├── 📄 requirements.txt            # Enhanced Python dependencies
+├── 📄 .env                        # Environment variables with logging configuration
+├── 📄 view_logs.py                # Interactive log viewer utility (NEW)
+├── 📄 test_logging.py             # Logging system validation script (NEW)
+└── 📄 debug_*.py                  # Debug and alignment testing scripts (NEW)
 ```
 
 ### Backend Organization Guidelines
@@ -134,12 +161,25 @@ backend/
 #### 🔐 Environment Configuration
 ```bash
 # Required environment variables in .env
+
+# Azure OpenAI API Configuration
 AZURE_OPENAI_API_KEY=your_api_key
 AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
 AZURE_OPENAI_API_VERSION=2023-12-01
 AZURE_OPENAI_DEPLOYMENT=your-deployment-name
+
+# Database Configuration
 DATABASE_URL=sqlite:///./database/pdf_extractor.db
+
+# CORS settings
 ALLOWED_ORIGINS=http://localhost:5173
+
+# Comprehensive Logging Configuration (NEW)
+LOG_LEVEL=INFO                    # DEBUG, INFO, WARNING, ERROR, CRITICAL
+ENABLE_PIPELINE_LOGGING=true     # Enable pipeline operations logging
+ENABLE_DATA_FLOW_LOGGING=true    # Enable data transformation logging
+ENABLE_DATABASE_LOGGING=true     # Enable database operations logging
+ENABLE_ERROR_LOGGING=true        # Enable error tracking logging
 ```
 
 ---
