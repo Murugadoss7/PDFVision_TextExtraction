@@ -356,11 +356,11 @@ const ComparisonView = () => {
     navigate(`/correction/${documentId}/upload`);
   };
 
-  const handleProceedToReview = async () => {
+  const handleReturnToViewer = async () => {
     if (hasUnsavedChanges) {
       try {
         await saveCorrections();
-        console.log('Changes saved before proceeding to review');
+        console.log('Changes saved before returning to viewer');
       } catch (error) {
         console.error('Failed to save changes:', error);
         const proceedAnyway = window.confirm(
@@ -371,7 +371,11 @@ const ComparisonView = () => {
         }
       }
     }
-    navigate(`/correction/${documentId}/review`);
+    // Return to viewer page with state indicating user is returning from correction workflow
+    navigate(`/viewer/${documentId}`, { 
+      state: { fromCorrection: true },
+      replace: true  // Replace current history entry to prevent back button issues
+    });
   };
 
   // Get panel size based on differences count
@@ -423,7 +427,7 @@ const ComparisonView = () => {
         totalPages={totalPages}
         onPageChange={handlePageChange}
         onBackToUpload={handleBackToUpload}
-        onProceedToReview={handleProceedToReview}
+        onReturnToViewer={handleReturnToViewer}
         hasUnsavedChanges={hasUnsavedChanges}
         onSave={saveCorrections}
         saving={saving}

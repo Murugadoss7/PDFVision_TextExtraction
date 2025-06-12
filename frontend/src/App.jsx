@@ -6,7 +6,6 @@ import HomePage from './components/HomePage';
 import ViewerPage from './components/PDFViewer/ViewerPage';
 import CorrectionDocumentUpload from './components/CorrectionWorkflow/CorrectionDocumentUpload';
 import ComparisonView from './components/CorrectionWorkflow/ComparisonView';
-import FinalReviewView from './components/CorrectionWorkflow/FinalReviewView';
 import { Box } from '@mui/material';
 
 function App() {
@@ -20,7 +19,6 @@ function App() {
               <Route path="/viewer/:documentId" element={<ViewerPage />} />
               <Route path="/correction/:documentId/upload" element={<CorrectionDocumentUpload />} />
               <Route path="/correction/:documentId/compare" element={<ComparisonView />} />
-              <Route path="/correction/:documentId/review" element={<FinalReviewView />} />
             </Routes>
           </Box>
         </BrowserRouter>

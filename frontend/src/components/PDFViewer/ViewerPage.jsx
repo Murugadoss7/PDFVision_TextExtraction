@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useLocation } from 'react-router-dom';
 import { 
   PanelGroup, 
   Panel, 
@@ -29,11 +29,13 @@ import {
   ZoomIn,
   ZoomOut,
   FitScreen,
-  FindInPage
+  FindInPage,
+  CheckCircle
 } from '@mui/icons-material';
 
 const ViewerPage = () => {
   const { documentId } = useParams();
+  const location = useLocation();
   const { 
     currentDocument, 
     currentPage, 
@@ -47,7 +49,9 @@ const ViewerPage = () => {
     fetchDocumentDetails, 
     fetchPageText,
     checkExtractionStatus,
-    exportDocumentToWord
+    exportDocumentToWord,
+    refreshPageText,
+    invalidatePageTextCache
   } = usePDFContext();
   const { mode, toggleTheme } = useThemeContext();
   const theme = useTheme();
@@ -55,8 +59,10 @@ const ViewerPage = () => {
   const [statusCheckInterval, setStatusCheckInterval] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [pdfZoom, setPdfZoom] = useState(100);
+  const [textSource, setTextSource] = useState('original');
 
-  // Clear interval when component unmounts
+  const isReturningFromCorrection = location.state?.fromCorrection || false;
+
   useEffect(() => {
     return () => {
       if (statusCheckInterval) {
@@ -65,23 +71,54 @@ const ViewerPage = () => {
     };
   }, []);
 
-  // Fetch document details on mount
   useEffect(() => {
     if (documentId) {
       fetchDocumentDetails(documentId);
+      
+      if (isReturningFromCorrection) {
+        console.log('Returning from correction workflow - refreshing page text');
+        invalidatePageTextCache(currentPage);
+      }
     }
-  }, [documentId, fetchDocumentDetails]);
+  }, [documentId, fetchDocumentDetails, isReturningFromCorrection, currentPage, invalidatePageTextCache]);
 
-  // Fetch page text when current page changes
   useEffect(() => {
     if (documentId && currentPage) {
-      fetchPageText(documentId, currentPage);
+      const forceRefresh = isReturningFromCorrection;
+      if (forceRefresh) {
+        refreshPageText(documentId, currentPage).then(() => {
+          checkTextSource(documentId, currentPage);
+        });
+      } else {
+        fetchPageText(documentId, currentPage);
+        checkTextSource(documentId, currentPage);
+      }
     }
-  }, [documentId, currentPage, fetchPageText]);
+  }, [documentId, currentPage, fetchPageText, refreshPageText, isReturningFromCorrection]);
+
+  const checkTextSource = async (docId, pageNum) => {
+    try {
+      const response = await fetch(`http://localhost:8000/api/documents/${docId}/pages/${pageNum}/text`);
+      if (response.ok) {
+        const data = await response.json();
+        setTextSource(data.source === 'corrected_text' ? 'corrected' : 'original');
+        console.log(`Page ${pageNum} text source:`, data.source);
+      } else {
+        setTextSource('original');
+      }
+    } catch (error) {
+      console.error('Error checking text source:', error);
+      setTextSource('original');
+    }
+  };
 
   const handlePageChange = (pageNumber) => {
     if (pageNumber > 0 && pageNumber <= totalPages) {
       setCurrentPage(pageNumber);
+      // Check text source for the new page
+      if (documentId) {
+        checkTextSource(documentId, pageNumber);
+      }
     }
   };
 
@@ -113,7 +150,6 @@ const ViewerPage = () => {
     setPdfZoom(100);
   };
 
-  // Panel resize handle style
   const resizeHandleStyle = {
     width: '4px',
     background: theme.palette.divider,
@@ -141,7 +177,6 @@ const ViewerPage = () => {
           </Alert>
         )}
         
-        {/* Main Content Area */}
         <Box sx={{ 
           flexGrow: 1, 
           overflow: 'hidden', 
@@ -154,7 +189,6 @@ const ViewerPage = () => {
         }}>
           <PanelGroup direction="horizontal" style={{ width: '100%', height: '100%' }}>
             
-            {/* Left Panel: PDF Viewer */}
             <Panel defaultSize={50}>
               <Box sx={{ 
                 height: '100%', 
@@ -162,7 +196,6 @@ const ViewerPage = () => {
                 flexDirection: 'column',
                 bgcolor: 'grey.50'
               }}>
-                {/* PDF Controls Bar */}
                 <Paper 
                   elevation={0}
                   sx={{ 
@@ -176,7 +209,6 @@ const ViewerPage = () => {
                     bgcolor: 'background.paper'
                   }}
                 >
-                  {/* Page Navigation */}
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <Tooltip title="Previous page" arrow>
                       <span>
@@ -225,7 +257,6 @@ const ViewerPage = () => {
                     </Tooltip>
                   </Box>
 
-                  {/* Document Title */}
                   <Typography variant="subtitle2" sx={{ 
                     color: 'text.secondary',
                     fontWeight: 500,
@@ -236,7 +267,6 @@ const ViewerPage = () => {
                     {currentDocument?.filename || 'Document Viewer'}
                   </Typography>
 
-                  {/* Zoom Controls */}
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                     <Tooltip title="Zoom out" arrow>
                       <span>
@@ -293,7 +323,6 @@ const ViewerPage = () => {
                   </Box>
                 </Paper>
 
-                {/* PDF Content */}
                 <Box sx={{ 
                   flexGrow: 1, 
                   overflow: 'auto', 
@@ -341,7 +370,6 @@ const ViewerPage = () => {
             
             <PanelResizeHandle style={resizeHandleStyle} />
             
-            {/* Right Panel: Text Editor */}
             <Panel defaultSize={50}>
               <Box sx={{ 
                 height: '100%', 
@@ -349,6 +377,41 @@ const ViewerPage = () => {
                 display: 'flex',
                 flexDirection: 'column'
               }}>
+                {/* Text Editor Header with Corrected Text Indicator */}
+                <Paper 
+                  elevation={0}
+                  sx={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'space-between',
+                    px: 2, 
+                    py: 1,
+                    borderBottom: `1px solid ${theme.palette.divider}`,
+                    borderRadius: 0,
+                    bgcolor: 'background.paper'
+                  }}
+                >
+                  <Typography variant="subtitle2" sx={{ 
+                    color: 'text.secondary',
+                    fontWeight: 500,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1
+                  }}>
+                    Extracted Text - Page {currentPage}
+                    {textSource === 'corrected' && (
+                      <Chip 
+                        icon={<CheckCircle />}
+                        label="Corrected"
+                        size="small"
+                        color="success"
+                        variant="outlined"
+                        sx={{ fontSize: '0.7rem', height: 24 }}
+                      />
+                    )}
+                  </Typography>
+                </Paper>
+
                 {loading ? (
                   <Box sx={{ 
                     display: 'flex', 

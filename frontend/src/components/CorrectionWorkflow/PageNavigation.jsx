@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, Typography, Pagination, Button, Chip } from '@mui/material';
-import { ArrowBack as ArrowBackIcon, ArrowForward as ArrowForwardIcon, Save as SaveIcon } from '@mui/icons-material';
+import { ArrowBack as ArrowBackIcon, Home as HomeIcon, Save as SaveIcon } from '@mui/icons-material';
 
 const PageNavigation = ({ 
   currentPage, 
@@ -8,7 +8,7 @@ const PageNavigation = ({
   documentId,
   onPageChange,
   onBackToUpload,
-  onProceedToReview,
+  onReturnToViewer,
   hasUnsavedChanges,
   onSave,
   saving
@@ -27,9 +27,9 @@ const PageNavigation = ({
     }
   };
 
-  const handleProceedToReview = () => {
-    if (typeof onProceedToReview === 'function') {
-      onProceedToReview();
+  const handleReturnToViewer = () => {
+    if (typeof onReturnToViewer === 'function') {
+      onReturnToViewer();
     }
   };
 
@@ -92,10 +92,11 @@ const PageNavigation = ({
           <Button
             variant="contained"
             size="small"
-            endIcon={<ArrowForwardIcon />}
-            onClick={handleProceedToReview}
+            endIcon={<HomeIcon />}
+            onClick={handleReturnToViewer}
+            color="success"
           >
-            Proceed to Review
+            Return to Viewer
           </Button>
         </Box>
       </Box>
