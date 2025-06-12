@@ -58,7 +58,7 @@ const ViewerPage = () => {
 
   const [statusCheckInterval, setStatusCheckInterval] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [pdfZoom, setPdfZoom] = useState(100);
+  const [pdfZoom, setPdfZoom] = useState(150); // Increased default zoom for better readability
   const [textSource, setTextSource] = useState('original');
 
   const isReturningFromCorrection = location.state?.fromCorrection || false;
@@ -139,15 +139,15 @@ const ViewerPage = () => {
   };
 
   const handleZoomIn = () => {
-    setPdfZoom(prev => Math.min(prev + 25, 200));
+    setPdfZoom(prev => Math.min(prev + 25, 250)); // Increased max zoom
   };
 
   const handleZoomOut = () => {
-    setPdfZoom(prev => Math.max(prev - 25, 50));
+    setPdfZoom(prev => Math.max(prev - 25, 75)); // Increased min zoom for better readability
   };
 
   const handleFitToWidth = () => {
-    setPdfZoom(100);
+    setPdfZoom(150); // Reset to new default zoom level
   };
 
   const resizeHandleStyle = {
@@ -273,7 +273,7 @@ const ViewerPage = () => {
                         <IconButton 
                           size="small"
                           onClick={handleZoomOut}
-                          disabled={pdfZoom <= 50}
+                          disabled={pdfZoom <= 75}
                           sx={{ width: 32, height: 32 }}
                         >
                           <ZoomOut fontSize="small" />
@@ -303,7 +303,7 @@ const ViewerPage = () => {
                         <IconButton 
                           size="small"
                           onClick={handleZoomIn}
-                          disabled={pdfZoom >= 200}
+                          disabled={pdfZoom >= 250}
                           sx={{ width: 32, height: 32 }}
                         >
                           <ZoomIn fontSize="small" />
@@ -327,9 +327,10 @@ const ViewerPage = () => {
                   flexGrow: 1, 
                   overflow: 'auto', 
                   display: 'flex',
-                  alignItems: 'center',
+                  alignItems: 'flex-start', // Changed to start from top
                   justifyContent: 'center',
-                  p: 2,
+                  p: 1, // Reduced padding
+                  pt: 0, // No top padding to start from very top
                   bgcolor: 'grey.100'
                 }}>
                   {currentDocument ? (

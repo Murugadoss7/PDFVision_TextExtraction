@@ -31,20 +31,29 @@ const PDFRenderer = ({
 
   const handlePageLoadSuccess = () => {
     setLoading(false);
+    // Scroll to top when page loads
+    const container = document.querySelector('[data-pdf-container]');
+    if (container) {
+      container.scrollTop = 0;
+    }
   };
 
   return (
-    <Box sx={{ 
-      width: '100%',
-      height: '100%',
-      display: 'flex',
-      alignItems: 'flex-start',
-      justifyContent: 'center',
-      overflow: 'auto',
-      bgcolor: '#f5f5f5',
-      position: 'relative',
-      p: 2
-    }}>
+    <Box 
+      sx={{ 
+        width: '100%',
+        height: '100%',
+        display: 'flex',
+        alignItems: 'flex-start', // Keep flex-start to align to top
+        justifyContent: 'center',
+        overflow: 'auto',
+        bgcolor: '#f5f5f5',
+        position: 'relative',
+        p: 1, // Reduced padding for more content space
+        pt: 2 // Top padding to start from top
+      }}
+      data-pdf-container // Add identifier for scroll-to-top functionality
+    >
       <Document
         file={documentUrl}
         onLoadSuccess={handleDocumentLoadSuccess}
@@ -84,7 +93,7 @@ const PDFRenderer = ({
           <Box sx={{
             display: 'flex',
             alignItems: 'flex-start',
-            justifyContent: 'center',
+            justifyContent: 'flex-start', // Changed to start from left edge for consistent alignment
             width: '100%',
             minHeight: '100%'
           }}>
@@ -94,7 +103,8 @@ const PDFRenderer = ({
               overflow: 'visible',
               border: '1px solid #ddd',
               bgcolor: 'white',
-              display: 'inline-block'
+              display: 'inline-block',
+              margin: '0 auto' // Center the PDF horizontally
             }}>
               <Page
                 pageNumber={currentPage}
