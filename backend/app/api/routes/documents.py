@@ -223,24 +223,29 @@ async def export_document_to_word(document_id: int, db: Session = Depends(get_db
                                    {"document_id": document_id})
         raise HTTPException(status_code=404, detail=f"Document with ID {document_id} not found")
     
-    # Make sure document has been processed (original check, might need adjustment if corrected text exists without full processing)
-    # For now, keeping it, as correction implies prior extraction.
-    if document.status not in ["completed", "images_extracted", "text_extracted", "correction_in_progress", "correction_complete"]:
-        raise HTTPException(status_code=400, detail="Document processing is not complete or not in a correctable state.")
+    # Check if document has been processed OR has corrected text available
+    # Get corrected text data first to determine if export is possible
+    corrected_text_entry = db.query(CorrectedText).filter(CorrectedText.document_id == document_id).first()
+    has_corrected_text = corrected_text_entry and corrected_text_entry.corrected_content_by_page
+    
+    # Allow export if document is processed OR has corrected text available
+    allowed_statuses = ["completed", "images_extracted", "text_extracted", "correction_in_progress", "correction_complete"]
+    if not has_corrected_text and document.status not in allowed_statuses:
+        raise HTTPException(status_code=400, detail="Document processing is not complete and no corrected text is available.")
     
     pages = db.query(Page).filter(Page.document_id == document_id).order_by(Page.page_number).all()
     
     has_text_to_export = False
     text_for_word = []
 
-    # Get corrected text data (stored as JSON per document, not per page)
-    corrected_text_entry = db.query(CorrectedText).filter(CorrectedText.document_id == document_id).first()
+    # Parse corrected text data (already fetched above)
     corrected_text_by_page = {}
-    if corrected_text_entry and corrected_text_entry.corrected_content_by_page:
+    if has_corrected_text:
         try:
             corrected_text_by_page = json.loads(corrected_text_entry.corrected_content_by_page)
         except json.JSONDecodeError:
             print(f"Failed to parse corrected text JSON for document {document_id}")
+            has_corrected_text = False  # Reset if parsing fails
 
     for page in pages:
         page_text_content = None
