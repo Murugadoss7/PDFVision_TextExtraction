@@ -6,20 +6,34 @@ from sqlalchemy.orm import Session
 from app.db.database import SessionLocal
 from app.db.models import Document, Page
 from app.services.text_extraction import extract_text_with_gpt_vision
+from app.utils.logging_config import pdf_vision_logger, generate_request_id
 
-async def extract_pages_as_images(document_id: int, file_path: str):
+async def extract_pages_as_images(document_id: int, file_path: str, request_id: str = None):
     """Extract pages from PDF as images and save them to the extracted directory"""
+    if not request_id:
+        request_id = generate_request_id()
+        
     db = SessionLocal()
     try:
         # Get document from database
         document = db.query(Document).filter(Document.id == document_id).first()
         if not document:
+            pdf_vision_logger.log_error(request_id, "IMAGE_EXTRACTION", 
+                                       ValueError("Document not found"), 
+                                       {"document_id": document_id})
             print(f"Document {document_id} not found")
             return
         
+        # Log image extraction start
+        pdf_vision_logger.log_image_extraction_start(request_id, document_id)
+        
         # Update document status
+        old_status = document.status
         document.status = "processing"
         db.commit()
+        
+        # Log status update
+        pdf_vision_logger.log_status_update(request_id, document_id, old_status, "processing", "Image extraction started")
         
         # Create directory for extracted images
         doc_dir = os.path.join("extracted", str(document_id))
@@ -50,8 +64,13 @@ async def extract_pages_as_images(document_id: int, file_path: str):
                 db.commit()
         
         # Update document status to indicate images are extracted
+        old_status = document.status
         document.status = "images_extracted"
         db.commit()
+        
+        # Log image extraction completion
+        pdf_vision_logger.log_image_extraction_complete(request_id, document_id, len(pdf_document))
+        pdf_vision_logger.log_status_update(request_id, document_id, old_status, "images_extracted", "Image extraction completed")
         
         # Start the text extraction process immediately and wait for it to complete
         print(f"Starting text extraction for document {document_id}")
@@ -64,8 +83,11 @@ async def extract_pages_as_images(document_id: int, file_path: str):
         for page in pages:
             if page.image_path:
                 print(f"Creating text extraction task for page {page.page_number}")
+                # Log LLM processing start
+                pdf_vision_logger.log_llm_processing_start(request_id, page.id, page.page_number)
+                
                 # Instead of just creating tasks, we'll collect them to await them
-                task = extract_text_with_gpt_vision(page.id, page.image_path, db)
+                task = extract_text_with_gpt_vision(page.id, page.image_path, db, request_id)
                 extraction_tasks.append(task)
         
         # Actually execute (at least one of) the extraction tasks

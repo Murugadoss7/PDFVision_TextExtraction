@@ -1,8 +1,8 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Box, Typography, Alert, Paper, Button, Grid, CircularProgress, Chip } from '@mui/material';
-import { CloudUpload as CloudUploadIcon, CheckCircleOutline as CheckCircleIcon, ArrowForward as ArrowForwardIcon, Assignment as AssignmentIcon } from '@mui/icons-material';
+import { Box, Typography, Alert, Paper, Button, Grid, CircularProgress, Chip, Container, IconButton } from '@mui/material';
+import { CloudUpload as CloudUploadIcon, CheckCircleOutline as CheckCircleIcon, ArrowForward as ArrowForwardIcon, Assignment as AssignmentIcon, ArrowBack as ArrowBackIcon } from '@mui/icons-material';
 import { getDocumentDetails, uploadEditablePdfForCorrection } from '../../services/api';
 import { usePDFContext } from '../../contexts/PDFContext';
 
@@ -127,8 +127,13 @@ const CorrectionDocumentUpload = () => {
   // Navigate to comparison
   const handleProceedToComparison = () => {
     if (existingDoc && docBUploadedInfo) {
-      navigate(`/correction/${documentId}/compare`);
+              navigate(`/correction/${documentId}/compare`);
     }
+  };
+
+  // Navigate back to viewer
+  const handleBackToViewer = () => {
+    navigate(`/viewer/${documentId}`);
   };
 
   // Dropzone for Document B
@@ -208,32 +213,54 @@ const CorrectionDocumentUpload = () => {
   // Loading state
   if (docALoading) {
     return (
-      <Paper elevation={2} sx={{ p: 3, textAlign: 'center' }}>
-        <CircularProgress sx={{ mb: 2 }} />
-        <Typography>Loading document details...</Typography>
-      </Paper>
+      <Container maxWidth="lg" sx={{ py: 4, display: 'flex', justifyContent: 'center' }}>
+        <Box sx={{ width: '100%', maxWidth: 900 }}>
+          <Paper elevation={2} sx={{ p: 3, textAlign: 'center' }}>
+            <CircularProgress sx={{ mb: 2 }} />
+            <Typography>Loading document details...</Typography>
+          </Paper>
+        </Box>
+      </Container>
     );
   }
 
   // Error state
   if (docAError) {
     return (
-      <Paper elevation={2} sx={{ p: 3 }}>
-        <Alert severity="error">{docAError}</Alert>
-        <Box sx={{ mt: 2, textAlign: 'center' }}>
-          <Button variant="outlined" onClick={() => navigate(-1)}>
-            Go Back
-          </Button>
+      <Container maxWidth="lg" sx={{ py: 4, display: 'flex', justifyContent: 'center' }}>
+        <Box sx={{ width: '100%', maxWidth: 900 }}>
+          <Paper elevation={2} sx={{ p: 3 }}>
+            <Alert severity="error">{docAError}</Alert>
+            <Box sx={{ mt: 2, textAlign: 'center' }}>
+              <Button variant="outlined" onClick={handleBackToViewer}>
+                Back to Viewer
+              </Button>
+            </Box>
+          </Paper>
         </Box>
-      </Paper>
+      </Container>
     );
   }
 
   return (
-    <Paper elevation={2} sx={{ p: 3 }}>
-      <Typography variant="h5" gutterBottom sx={{textAlign: 'center', mb: 3}}>
-        Interactive OCR Correction Setup
-      </Typography>
+    <Container maxWidth="lg" sx={{ py: 4, display: 'flex', justifyContent: 'center' }}>
+      <Box sx={{ width: '100%', maxWidth: 900 }}>
+        {/* Back Button */}
+        <Box sx={{ mb: 3 }}>
+          <Button
+            startIcon={<ArrowBackIcon />}
+            onClick={handleBackToViewer}
+            color="primary"
+            sx={{ mb: 2 }}
+          >
+            Back to Viewer
+          </Button>
+        </Box>
+
+        <Paper elevation={2} sx={{ p: 3 }}>
+          <Typography variant="h5" gutterBottom sx={{textAlign: 'center', mb: 3}}>
+            Interactive OCR Correction Setup
+          </Typography>
       
       <Grid container spacing={3}>
         {/* Document A - Existing Document (Ready) */}
@@ -314,6 +341,8 @@ const CorrectionDocumentUpload = () => {
         </Box>
       )}
     </Paper>
+      </Box>
+    </Container>
   );
 };
 

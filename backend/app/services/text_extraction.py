@@ -394,8 +394,13 @@ def process_layout_markers(text_content: str) -> dict:
             "has_formatting": False
         }
 
-async def extract_text_with_gpt_vision(page_id: int, image_path: str, db: Session):
+async def extract_text_with_gpt_vision(page_id: int, image_path: str, db: Session, request_id: str = None):
     """Extract text from page image using Azure OpenAI's GPT Vision model"""
+    from app.utils.logging_config import pdf_vision_logger, generate_request_id
+    
+    if not request_id:
+        request_id = generate_request_id()
+    
     print(f"Starting text extraction for page {page_id} with image: {image_path}")
     try:
         if client is None:
@@ -427,9 +432,9 @@ async def extract_text_with_gpt_vision(page_id: int, image_path: str, db: Sessio
                         {
                             "role": "user",
                             "content": [
-                                {"type": "text", "text": """You are a document reconstruction assistant.
+                                {"type": "text", "text": """You are a document reconstruction assistant that outputs clean HTML.
 
-You will be shown a scanned image of a printed document. Your task is to extract ALL text exactly as it appears, preserving maximum accuracy and layout awareness.
+You will be shown a scanned image of a printed document. Your task is to extract ALL text exactly as it appears, preserving maximum accuracy and layout awareness, returning the content as well-formatted HTML.
 
 CRITICAL ACCURACY INSTRUCTIONS:
 - Transcribe each word and character as literally and faithfully as possible, exactly as they appear in the image
@@ -451,36 +456,53 @@ LAYOUT AND FORMATTING AWARENESS:
 - Recognize and maintain numbered/bulleted lists structure
 - Maintain spacing between sections when visually apparent
 
-TEXT STRUCTURE WITH LAYOUT MARKERS:
-Use these simple markers to indicate layout while keeping the output as plain text:
+HTML OUTPUT FORMAT:
+Return clean, semantic HTML using these tags appropriately:
 
-[CENTER] - Place before text that appears visually centered
-[INDENT] - Place before text that is clearly indented
-[TITLE] - Place before text that appears to be a title or heading (larger/bold)
-[HEADING] - Place before text that appears to be a heading (emphasizes)
+- <h1>, <h2>, <h3> for titles and headings (based on visual hierarchy)
+- <p> for paragraphs and regular text blocks
+- <div style="text-align: center"> for centered content
+- <ul><li> or <ol><li> for bulleted/numbered lists
+- <blockquote> for indented content that appears to be quotes
+- <strong> for visually bold text
+- <em> for visually italicized text
+- <br> only for explicit line breaks within the same paragraph
+
+FORMATTING GUIDELINES:
+- Use semantic HTML tags that reflect the document structure
+- Apply inline styles sparingly (only for text-align: center)
+- Do NOT add any CSS classes, IDs, or complex styling
+- Ensure proper HTML tag nesting and closing
+- Use appropriate heading levels (h1 for main titles, h2 for sections, h3 for subsections)
+- Group related content in proper paragraph tags
 
 RETURN FORMAT:
-- Return ONLY the extracted text content with layout markers
-- Use double line breaks (\\n\\n) to separate distinct paragraphs  
-- Use single line breaks (\\n) for lines within the same paragraph
-- Do NOT use any other markup, formatting codes, or explanations
-- Do NOT add commentary or notes about the extraction process
-- Ensure the text flows naturally and maintains the document's logical reading order
+- Return ONLY the HTML content - no commentary, explanations, or code blocks
+- Do NOT wrap in ```html``` or any other markdown formatting
+- Start directly with the HTML tags
+- Ensure the output is valid HTML that renders properly
 - If the page appears to be completely blank or contains no readable text, return an empty response
 
 EXAMPLE OUTPUT FORMAT:
-[CENTER][TITLE]MAIN TITLE
-[CENTER]Subtitle or Publisher
-[CENTER]Website URL
+<div style="text-align: center">
+<h1>MAIN TITLE</h1>
+<p>Subtitle or Publisher</p>
+<p>Website URL</p>
+</div>
 
-[HEADING]Section Heading
-Regular paragraph text that flows normally and maintains 
-the original structure as seen in the document.
+<h2>Section Heading</h2>
+<p>Regular paragraph text that flows normally and maintains the original structure as seen in the document.</p>
 
-[INDENT]Indented paragraph or bullet point
-[INDENT]Another indented item
+<ul>
+<li>Bulleted item one</li>
+<li>Bulleted item two</li>
+</ul>
 
-Extract all visible text with maximum fidelity to the original document."""},
+<blockquote>
+<p>Indented content that appears to be a quote or special section.</p>
+</blockquote>
+
+Extract all visible text with maximum fidelity to the original document, outputting clean HTML."""},
                                 {
                                     "type": "image_url",
                                     "image_url": {
@@ -499,6 +521,11 @@ Extract all visible text with maximum fidelity to the original document."""},
                 extracted_text = response.choices[0].message.content
                 print(f"Extracted text length: {len(extracted_text)} characters")
                 
+                # Log LLM completion
+                formatted_text_json = extracted_text  # Store HTML content directly
+                pdf_vision_logger.log_llm_processing_complete(request_id, page_id, len(extracted_text), len(formatted_text_json))
+                pdf_vision_logger.log_llm_data(request_id, page_id, extracted_text, formatted_text_json)
+                
                 # Check if page has any meaningful text content
                 if not extracted_text or not extracted_text.strip():
                     print(f"Page {page_id} contains no text content - skipping")
@@ -507,6 +534,7 @@ Extract all visible text with maximum fidelity to the original document."""},
                     if page:
                         page.status = "no_text"
                         db.commit()
+                        pdf_vision_logger.log_db_save(request_id, "UPDATE", "pages", page.id, {"status": "no_text"})
                     
                     return {
                         "success": True,
@@ -524,6 +552,7 @@ Extract all visible text with maximum fidelity to the original document."""},
                     if page:
                         page.status = "minimal_text"
                         db.commit()
+                        pdf_vision_logger.log_db_save(request_id, "UPDATE", "pages", page.id, {"status": "minimal_text"})
                     
                     return {
                         "success": True,
@@ -532,9 +561,9 @@ Extract all visible text with maximum fidelity to the original document."""},
                         "message": f"Page contains minimal text content ({len(cleaned_text)} chars) - skipped"
                     }
                 
-                # Process layout markers and create structured formatting
-                formatted_data = process_layout_markers(extracted_text)
-                formatted_text_json = json.dumps(formatted_data)
+                # Since we're now getting HTML directly from the LLM, 
+                # we can store it as-is for the formatted_text field
+                # The QuillTextEditor will render this HTML directly
             except Exception as api_error:
                 print(f"ERROR calling GPT Vision API: {str(api_error)}")
                 return {
@@ -560,6 +589,14 @@ Extract all visible text with maximum fidelity to the original document."""},
                 # Update page status
                 page.status = "processed"
                 db.commit()
+                
+                # Log database save
+                pdf_vision_logger.log_db_save(request_id, "UPDATE", "pages", page_id, {
+                    "status": "processed",
+                    "raw_text_length": len(extracted_text),
+                    "formatted_text_length": len(formatted_text_json)
+                })
+                
                 print(f"Successfully updated database with extracted text for page {page_id}")
                 
                 return {

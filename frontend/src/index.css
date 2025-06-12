@@ -6,20 +6,218 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background-color: #fafafa;
 }
 
-/* PDF viewer styles */
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+/* Professional CKEditor Styling */
+.ck-editor__main {
+  min-height: 300px !important;
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.ck-editor__editable {
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  flex: 1 !important;
+  overflow-y: auto !important;
+  min-height: 300px !important;
+  max-height: none !important;
+}
+
+.ck-editor__editable_inline {
+  height: 100% !important;
+  overflow-y: auto !important;
+}
+
+.ck-content {
+  font-family: inherit;
+  line-height: 1.6;
+  padding: 1.5rem;
+  min-height: 100% !important;
+  border: none;
+  outline: none;
+  height: auto !important;
+}
+
+.ck-toolbar {
+  border-left: none !important;
+  border-right: none !important;
+  border-top: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  padding: 8px 12px !important;
+}
+
+.ck-toolbar__items {
+  gap: 4px !important;
+}
+
+.ck-button {
+  padding: 4px 6px !important;
+  border-radius: 4px !important;
+  min-height: 28px !important;
+  font-size: 13px !important;
+}
+
+.ck-button__label {
+  font-size: 13px !important;
+}
+
+.ck-icon {
+  width: 16px !important;
+  height: 16px !important;
+}
+
+.ck-dropdown__button {
+  padding: 4px 8px !important;
+  font-size: 13px !important;
+  min-height: 28px !important;
+}
+
+.ck-toolbar__separator {
+  height: 20px !important;
+  margin: 4px 6px !important;
+}
+
+/* Panel resize handle styling */
+.react-resizable-panels-handle[data-panel-group-direction="horizontal"] {
+  width: 4px !important;
+  background: #e0e0e0 !important;
+  transition: all 0.2s ease !important;
+  position: relative !important;
+}
+
+.react-resizable-panels-handle[data-panel-group-direction="horizontal"]:hover {
+  background: #1976d2 !important;
+  width: 6px !important;
+}
+
+.react-resizable-panels-handle[data-panel-group-direction="horizontal"]:active {
+  background: #1565c0 !important;
+}
+
+/* PDF Viewer Enhancements */
 .react-pdf__Page {
-  margin-top: 10px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1) !important;
+  border-radius: 8px !important;
+  overflow: hidden !important;
+  margin: 8px !important;
+  border: 1px solid #e0e0e0 !important;
 }
 
 .react-pdf__Page__canvas {
-  margin: 0 auto;
-  border: 1px solid #e0e0e0;
+  display: block !important;
+  max-width: 100% !important;
+  height: auto !important;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a1a1a1;
+}
+
+/* Button Group Enhancements */
+.MuiButtonGroup-root .MuiButton-root {
+  font-size: 0.75rem !important;
+  padding: 6px 12px !important;
+  min-width: 80px !important;
+  text-transform: none !important;
+}
+
+/* Chip Enhancements */
+.MuiChip-root {
+  font-weight: 500 !important;
+}
+
+/* Tooltip Enhancements */
+.MuiTooltip-tooltip {
+  font-size: 0.75rem !important;
+  padding: 6px 8px !important;
+}
+
+/* Enhanced Icon Button Styling */
+.MuiIconButton-root {
+  transition: all 0.2s ease !important;
+}
+
+.MuiIconButton-root:hover {
+  transform: scale(1.05) !important;
+}
+
+/* Paper Component Enhancements */
+.MuiPaper-root {
+  transition: box-shadow 0.2s ease !important;
+}
+
+/* Enhanced focus states */
+.MuiButton-root:focus,
+.MuiIconButton-root:focus {
+  outline: 2px solid #1976d2 !important;
+  outline-offset: 2px !important;
+}
+
+/* Loading states */
+.MuiCircularProgress-root {
+  color: #1976d2 !important;
+}
+
+/* Alert styling */
+.MuiAlert-root {
+  border-radius: 8px !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
 }
 
 /* Text highlighting */
 mark {
   background-color: #ffff00;
   padding: 0;
+}
+
+/* Auto-highlight animations for CKEditor */
+@keyframes highlight-pulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 4px rgba(255, 193, 7, 0.4);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 0 12px rgba(255, 193, 7, 0.8);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 4px rgba(255, 193, 7, 0.4);
+  }
+}
+
+.auto-highlight {
+  animation-fill-mode: both;
+}
+
+/* Smooth scroll behavior for highlight scrolling */
+html {
+  scroll-behavior: smooth;
 } 

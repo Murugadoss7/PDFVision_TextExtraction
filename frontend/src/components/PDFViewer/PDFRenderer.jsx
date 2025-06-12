@@ -10,7 +10,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/$
 const PDFRenderer = ({ 
   documentUrl, 
   currentPage = 1, 
-  zoom = 100, 
+  zoom = 200, 
   onLoadSuccess = () => {} 
 }) => {
   const [, setNumPages] = useState(null);
@@ -33,16 +33,17 @@ const PDFRenderer = ({
     setLoading(false);
   };
 
-  const scale = zoom / 100;
-
   return (
     <Box sx={{ 
-      display: 'flex', 
-      flexDirection: 'column', 
-      alignItems: 'center',
-      p: 2,
       width: '100%',
-      minHeight: 'fit-content'
+      height: '100%',
+      display: 'flex',
+      alignItems: 'flex-start',
+      justifyContent: 'center',
+      overflow: 'auto',
+      bgcolor: '#f5f5f5',
+      position: 'relative',
+      p: 2
     }}>
       <Document
         file={documentUrl}
@@ -54,43 +55,73 @@ const PDFRenderer = ({
             flexDirection: 'column', 
             alignItems: 'center',
             justifyContent: 'center',
-            minHeight: '50vh'
+            gap: 2,
+            p: 4
           }}>
-            <CircularProgress sx={{ mb: 2 }} />
-            <Typography variant="body1">Loading PDF document...</Typography>
+            <CircularProgress size={40} color="primary" />
+            <Typography variant="body1" color="text.secondary">
+              Loading PDF document...
+            </Typography>
           </Box>
         }
       >
         {error ? (
           <Box sx={{ 
-            p: 3, 
-            border: '1px solid', 
+            p: 4, 
+            border: '2px solid', 
             borderColor: 'error.main', 
-            borderRadius: 1, 
+            borderRadius: 2, 
             bgcolor: 'error.light', 
-            color: 'error.dark'
+            color: 'error.dark',
+            maxWidth: 500,
+            textAlign: 'center',
+            mx: 'auto'
           }}>
+            <Typography variant="h6" gutterBottom>Error Loading PDF</Typography>
             <Typography>{error}</Typography>
           </Box>
         ) : (
-          <Page
-            pageNumber={currentPage}
-            scale={scale}
-            loading={
-              <Box sx={{ 
-                display: 'flex', 
-                flexDirection: 'column', 
-                alignItems: 'center', 
-                p: 4
-              }}>
-                <CircularProgress size={24} sx={{ mb: 1 }} />
-                <Typography variant="body2">Loading page...</Typography>
-              </Box>
-            }
-            onLoadSuccess={handlePageLoadSuccess}
-            renderTextLayer={false}
-            renderAnnotationLayer={false}
-          />
+          <Box sx={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'center',
+            width: '100%',
+            minHeight: '100%'
+          }}>
+            <Box sx={{
+              boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+              borderRadius: '8px',
+              overflow: 'visible',
+              border: '1px solid #ddd',
+              bgcolor: 'white',
+              display: 'inline-block'
+            }}>
+              <Page
+                pageNumber={currentPage}
+                scale={zoom / 100}
+                loading={
+                  <Box sx={{ 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    alignItems: 'center', 
+                    justifyContent: 'center',
+                    gap: 2,
+                    p: 8,
+                    minHeight: 400,
+                    minWidth: 300
+                  }}>
+                    <CircularProgress size={32} color="primary" />
+                    <Typography variant="body1" color="text.secondary">
+                      Loading page {currentPage}...
+                    </Typography>
+                  </Box>
+                }
+                onLoadSuccess={handlePageLoadSuccess}
+                renderTextLayer={true}
+                renderAnnotationLayer={true}
+              />
+            </Box>
+          </Box>
         )}
       </Document>
     </Box>

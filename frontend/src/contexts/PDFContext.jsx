@@ -85,18 +85,13 @@ export const PDFContextProvider = ({ children }) => {
     setLoading(true);
     setError(null);
     try {
-      // Assuming you have an endpoint like /documents/{documentId}/extraction-status
-      // const response = await apiClient.get(`/documents/${documentId}/extraction-status`);
-      // For now, this is a placeholder as it was not fully defined in api.js or task plan for direct context use.
-      // This might be handled within component logic or specific flows.
-      // const response = await apiCheckExtractionStatus(documentId); // if defined in api.js
-      // return response.data;
-      console.warn("checkExtractionStatus in PDFContext is a placeholder and needs an API endpoint.")
-      return { status: 'unknown' }; // Placeholder response
+      // Use the existing document details endpoint to check status
+      const response = await apiGetDocumentDetails(documentId);
+      return { status: response.data.status }; // Return actual document status
     } catch (error) {
       console.error('Error checking extraction status:', error);
       setError('Failed to check extraction status');
-      return null;
+      return { status: 'error' }; // Return error status to stop polling
     } finally {
       setLoading(false);
     }

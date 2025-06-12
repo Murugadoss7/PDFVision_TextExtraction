@@ -15,7 +15,8 @@ import {
   DarkMode as DarkModeIcon,
   LightMode as LightModeIcon,
   Upload as UploadIcon,
-  Article as ArticleIcon
+  Article as ArticleIcon,
+  CompareArrows as CompareArrowsIcon
 } from '@mui/icons-material';
 import { Link as RouterLink } from 'react-router-dom';
 
@@ -23,7 +24,8 @@ const Header = ({
   onSearchChange, 
   searchQuery = '', 
   onToggleTheme = () => {}, 
-  isDarkMode = false 
+  isDarkMode = false,
+  documentId = null 
 }) => {
   const theme = useTheme();
 
@@ -91,6 +93,20 @@ const Header = ({
           >
             {isDarkMode ? <LightModeIcon /> : <DarkModeIcon />}
           </IconButton>
+
+          {/* OCR Correction Button - only show when viewing a document */}
+          {documentId && (
+            <Button
+              variant="contained"
+              color="warning"
+              startIcon={<CompareArrowsIcon />}
+              component={RouterLink}
+              to={`/correction/${documentId}/upload`}
+              sx={{ ml: 2 }}
+            >
+              OCR Correction
+            </Button>
+          )}
 
           {/* Upload Button */}
           <Button

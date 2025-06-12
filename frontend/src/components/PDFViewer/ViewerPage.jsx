@@ -8,17 +8,29 @@ import {
 import { usePDFContext } from '../../contexts/PDFContext';
 import { useThemeContext } from '../../contexts/ThemeContext';
 import PDFRenderer from './PDFRenderer';
-import TextDisplay from '../TextEditor/TextDisplay';
+import CKTextEditor from '../TextEditor/CKTextEditor';
 import Header from '../UI/Header';
-import ViewerToolbar from '../UI/ViewerToolbar';
 import { 
   Box, 
   Paper, 
   CircularProgress, 
   Alert,
   Container,
-  useTheme
+  useTheme,
+  IconButton,
+  Typography,
+  Tooltip,
+  ButtonGroup,
+  Chip
 } from '@mui/material';
+import {
+  NavigateBefore,
+  NavigateNext,
+  ZoomIn,
+  ZoomOut,
+  FitScreen,
+  FindInPage
+} from '@mui/icons-material';
 
 const ViewerPage = () => {
   const { documentId } = useParams();
@@ -41,12 +53,8 @@ const ViewerPage = () => {
   const theme = useTheme();
 
   const [statusCheckInterval, setStatusCheckInterval] = useState(null);
-  const [zoom, setZoom] = useState(100);
-  const [syncEnabled, setSyncEnabled] = useState(false);
-  const [editModeEnabled, setEditModeEnabled] = useState(false);
-  const [formattingEnabled, setFormattingEnabled] = useState(false);
-  const [errorDetectionEnabled, setErrorDetectionEnabled] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [pdfZoom, setPdfZoom] = useState(100);
 
   // Clear interval when component unmounts
   useEffect(() => {
@@ -64,31 +72,6 @@ const ViewerPage = () => {
     }
   }, [documentId, fetchDocumentDetails]);
 
-  // Start polling for extraction status if document is in processing state
-  useEffect(() => {
-    // Clear previous interval if exists
-    if (statusCheckInterval) {
-      clearInterval(statusCheckInterval);
-      setStatusCheckInterval(null);
-    }
-
-    if (currentDocument && currentDocument.status === 'processing') {
-      // Create interval to check status every 5 seconds
-      const interval = setInterval(async () => {
-        const status = await checkExtractionStatus(documentId);
-        
-        // If extraction is complete, refresh document details
-        if (status && (status.status === 'completed' || status.status === 'error')) {
-          fetchDocumentDetails(documentId);
-          clearInterval(interval);
-          setStatusCheckInterval(null);
-        }
-      }, 5000);
-      
-      setStatusCheckInterval(interval);
-    }
-  }, [currentDocument, documentId, fetchDocumentDetails, checkExtractionStatus]);
-
   // Fetch page text when current page changes
   useEffect(() => {
     if (documentId && currentPage) {
@@ -104,138 +87,291 @@ const ViewerPage = () => {
 
   const handleSearchChange = (query) => {
     setSearchQuery(query);
-    // Implement search logic here
+  };
+
+  const handlePreviousPage = () => {
+    if (currentPage > 1) {
+      handlePageChange(currentPage - 1);
+    }
+  };
+
+  const handleNextPage = () => {
+    if (currentPage < totalPages) {
+      handlePageChange(currentPage + 1);
+    }
+  };
+
+  const handleZoomIn = () => {
+    setPdfZoom(prev => Math.min(prev + 25, 200));
+  };
+
+  const handleZoomOut = () => {
+    setPdfZoom(prev => Math.max(prev - 25, 50));
+  };
+
+  const handleFitToWidth = () => {
+    setPdfZoom(100);
   };
 
   // Panel resize handle style
   const resizeHandleStyle = {
-    width: '8px',
+    width: '4px',
     background: theme.palette.divider,
     '&:hover': {
-      background: theme.palette.primary.light,
+      background: theme.palette.primary.main,
     },
     cursor: 'col-resize',
     transition: 'background 0.2s',
   };
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', bgcolor: 'background.default' }}>
       <Header 
         onSearchChange={handleSearchChange}
         searchQuery={searchQuery}
         isDarkMode={mode === 'dark'}
         onToggleTheme={toggleTheme}
+        documentId={documentId}
       />
       
-      <Container maxWidth="xl" sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', pt: 2, pb: 2 }}>
-        <ViewerToolbar 
-          currentPage={currentPage}
-          totalPages={totalPages}
-          zoom={zoom}
-          onPageChange={handlePageChange}
-          onZoomChange={setZoom}
-          syncEnabled={syncEnabled}
-          onSyncToggle={setSyncEnabled}
-          editModeEnabled={editModeEnabled}
-          onEditModeToggle={setEditModeEnabled}
-          formattingEnabled={formattingEnabled}
-          onFormattingToggle={setFormattingEnabled}
-          errorDetectionEnabled={errorDetectionEnabled}
-          onErrorDetectionToggle={setErrorDetectionEnabled}
-          onExport={() => exportDocumentToWord(documentId)}
-        />
-        
+      <Container maxWidth="xl" sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', py: 1 }}>
         {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
+          <Alert severity="error" sx={{ mb: 1, borderRadius: 1 }}>
             {error}
           </Alert>
         )}
         
+        {/* Main Content Area */}
         <Box sx={{ 
           flexGrow: 1, 
           overflow: 'hidden', 
           display: 'flex',
-          borderRadius: 1,
+          borderRadius: 2,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
           border: `1px solid ${theme.palette.divider}`,
-          height: 'calc(100vh - 180px)'  // Calculate height to ensure scrolling works
+          height: 'calc(100vh - 100px)',
+          bgcolor: 'background.paper'
         }}>
           <PanelGroup direction="horizontal" style={{ width: '100%', height: '100%' }}>
-            {/* Left panel: PDF Viewer */}
+            
+            {/* Left Panel: PDF Viewer */}
             <Panel defaultSize={50}>
-              <Paper 
-                elevation={0} 
-                sx={{ 
-                  height: '100%', 
-                  overflow: 'auto', 
-                  bgcolor: 'background.paper',
-                  borderRadius: 0,
-                  display: 'flex',
-                  flexDirection: 'column'
-                }}
-              >
-                {currentDocument ? (
-                  <PDFRenderer 
-                    documentUrl={`http://localhost:8000/api/documents/${documentId}/file`}
-                    currentPage={currentPage}
-                    zoom={zoom}
-                    onLoadSuccess={(numPages) => {
-                      // If totalPages is 0, update it from the PDF
-                      if (totalPages === 0) {
-                        setTotalPages(numPages);
-                      }
-                    }}
-                  />
-                ) : (
-                  <Box sx={{ 
+              <Box sx={{ 
+                height: '100%', 
+                display: 'flex',
+                flexDirection: 'column',
+                bgcolor: 'grey.50'
+              }}>
+                {/* PDF Controls Bar */}
+                <Paper 
+                  elevation={0}
+                  sx={{ 
                     display: 'flex', 
-                    justifyContent: 'center', 
                     alignItems: 'center', 
-                    height: '100%' 
-                  }}>
-                    {loading ? <CircularProgress /> : 'No document found'}
+                    justifyContent: 'space-between',
+                    px: 2, 
+                    py: 1,
+                    borderBottom: `1px solid ${theme.palette.divider}`,
+                    borderRadius: 0,
+                    bgcolor: 'background.paper'
+                  }}
+                >
+                  {/* Page Navigation */}
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Tooltip title="Previous page" arrow>
+                      <span>
+                        <IconButton 
+                          size="small" 
+                          onClick={handlePreviousPage}
+                          disabled={currentPage <= 1}
+                          sx={{ 
+                            width: 32, 
+                            height: 32,
+                            color: currentPage <= 1 ? 'text.disabled' : 'primary.main',
+                          }}
+                        >
+                          <NavigateBefore fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                    
+                    <Chip 
+                      label={`${currentPage} / ${totalPages}`}
+                      size="small"
+                      variant="outlined"
+                      sx={{ 
+                        minWidth: 80,
+                        fontSize: '0.75rem',
+                        height: 28,
+                        bgcolor: 'background.default'
+                      }}
+                    />
+                    
+                    <Tooltip title="Next page" arrow>
+                      <span>
+                        <IconButton 
+                          size="small" 
+                          onClick={handleNextPage}
+                          disabled={currentPage >= totalPages}
+                          sx={{ 
+                            width: 32, 
+                            height: 32,
+                            color: currentPage >= totalPages ? 'text.disabled' : 'primary.main',
+                          }}
+                        >
+                          <NavigateNext fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
                   </Box>
-                )}
-              </Paper>
+
+                  {/* Document Title */}
+                  <Typography variant="subtitle2" sx={{ 
+                    color: 'text.secondary',
+                    fontWeight: 500,
+                    textAlign: 'center',
+                    flex: 1,
+                    mx: 2
+                  }}>
+                    {currentDocument?.filename || 'Document Viewer'}
+                  </Typography>
+
+                  {/* Zoom Controls */}
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Tooltip title="Zoom out" arrow>
+                      <span>
+                        <IconButton 
+                          size="small"
+                          onClick={handleZoomOut}
+                          disabled={pdfZoom <= 50}
+                          sx={{ width: 32, height: 32 }}
+                        >
+                          <ZoomOut fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                    
+                    <Chip 
+                      label={`${pdfZoom}%`}
+                      size="small"
+                      clickable
+                      onClick={handleFitToWidth}
+                      sx={{ 
+                        minWidth: 60,
+                        fontSize: '0.75rem',
+                        height: 28,
+                        bgcolor: 'primary.light',
+                        color: 'primary.contrastText',
+                        '&:hover': {
+                          bgcolor: 'primary.main'
+                        }
+                      }}
+                    />
+                    
+                    <Tooltip title="Zoom in" arrow>
+                      <span>
+                        <IconButton 
+                          size="small"
+                          onClick={handleZoomIn}
+                          disabled={pdfZoom >= 200}
+                          sx={{ width: 32, height: 32 }}
+                        >
+                          <ZoomIn fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                    
+                    <Tooltip title="Fit to width" arrow>
+                      <IconButton 
+                        size="small"
+                        onClick={handleFitToWidth}
+                        sx={{ width: 32, height: 32, ml: 0.5 }}
+                      >
+                        <FitScreen fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
+                </Paper>
+
+                {/* PDF Content */}
+                <Box sx={{ 
+                  flexGrow: 1, 
+                  overflow: 'auto', 
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  p: 2,
+                  bgcolor: 'grey.100'
+                }}>
+                  {currentDocument ? (
+                    <PDFRenderer 
+                      documentUrl={`http://localhost:8000/api/documents/${documentId}/file`}
+                      currentPage={currentPage}
+                      zoom={pdfZoom}
+                      onLoadSuccess={(numPages) => {
+                        if (totalPages === 0) {
+                          setTotalPages(numPages);
+                        }
+                      }}
+                    />
+                  ) : (
+                    <Box sx={{ 
+                      display: 'flex', 
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: 2,
+                      color: 'text.secondary'
+                    }}>
+                      {loading ? (
+                        <>
+                          <CircularProgress size={40} />
+                          <Typography variant="body2">Loading document...</Typography>
+                        </>
+                      ) : (
+                        <>
+                          <FindInPage sx={{ fontSize: 48, opacity: 0.5 }} />
+                          <Typography variant="body2">No document found</Typography>
+                        </>
+                      )}
+                    </Box>
+                  )}
+                </Box>
+              </Box>
             </Panel>
             
             <PanelResizeHandle style={resizeHandleStyle} />
             
-            {/* Right panel: Text Display */}
+            {/* Right Panel: Text Editor */}
             <Panel defaultSize={50}>
-              <Paper 
-                elevation={0} 
-                sx={{ 
-                  height: '100%', 
-                  overflow: 'auto',
-                  bgcolor: 'background.paper',
-                  borderRadius: 0,
-                  p: 2,
-                  display: 'flex',
-                  flexDirection: 'column'
-                }}
-              >
+              <Box sx={{ 
+                height: '100%', 
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column'
+              }}>
                 {loading ? (
                   <Box sx={{ 
                     display: 'flex', 
+                    flexDirection: 'column',
                     justifyContent: 'center', 
                     alignItems: 'center', 
-                    height: '100%' 
+                    height: '100%',
+                    gap: 2,
+                    color: 'text.secondary'
                   }}>
-                    <CircularProgress />
+                    <CircularProgress size={40} />
+                    <Typography variant="body2">Loading text content...</Typography>
                   </Box>
                 ) : (
-                  <TextDisplay 
+                  <CKTextEditor 
                     text={extractedText[currentPage] || ''}
                     formattedText={formattedText[currentPage] || null}
                     pageNumber={currentPage}
                     documentId={documentId}
-                    editModeEnabled={editModeEnabled}
-                    formattingEnabled={formattingEnabled}
-                    errorDetectionEnabled={errorDetectionEnabled}
                     searchQuery={searchQuery}
                   />
                 )}
-              </Paper>
+              </Box>
             </Panel>
           </PanelGroup>
         </Box>

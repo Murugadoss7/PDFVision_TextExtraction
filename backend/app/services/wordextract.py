@@ -1,10 +1,250 @@
 from docx import Document
 from docx.shared import Pt, RGBColor
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
-from typing import List, Dict
+from htmldocx import HtmlToDocx
 import logging
-import traceback
-import sys
+import re
+from typing import List, Dict, Any
+from bs4 import BeautifulSoup
+from app.utils.logging_config import pdf_vision_logger, generate_request_id
+
+logger = logging.getLogger(__name__)
+
+def parse_html_to_word_format(html_content: str) -> List[Dict[str, Any]]:
+    """
+    Convert HTML content to Word document format using htmldocx library with direct alignment extraction.
+    This handles all HTML formatting including CKEditor output with inline styles.
+    """
+    if not html_content or html_content.strip() == "":
+        logger.debug("Empty HTML content provided")
+        return []
+    
+    try:
+        logger.debug(f"Converting HTML to Word format: {html_content[:200]}...")
+        
+        # Parse HTML with BeautifulSoup to extract structured information
+        soup = BeautifulSoup(html_content, 'html.parser')
+        
+        # Find all text elements with their formatting
+        text_elements = []
+        
+        # First, handle div containers with alignment that contain paragraphs
+        for div_element in soup.find_all('div'):
+            div_alignment = "left"
+            
+            # Check if div has alignment styles
+            if div_element.get('style'):
+                style = div_element.get('style', '')
+                if 'text-align: center' in style or 'text-align:center' in style:
+                    div_alignment = "center"
+                elif 'text-align: right' in style or 'text-align:right' in style:
+                    div_alignment = "right"
+                elif 'text-align: justify' in style or 'text-align:justify' in style:
+                    div_alignment = "justify"
+            
+            # If div has alignment, apply it to child paragraphs
+            if div_alignment != "left":
+                child_paragraphs = div_element.find_all('p', recursive=False)
+                for p in child_paragraphs:
+                    text = p.get_text(strip=True)
+                    if not text:
+                        continue
+                    
+                    # Inherit alignment from parent div unless paragraph has its own
+                    p_alignment = div_alignment
+                    if p.get('style'):
+                        p_style = p.get('style', '')
+                        if 'text-align: center' in p_style or 'text-align:center' in p_style:
+                            p_alignment = "center"
+                        elif 'text-align: right' in p_style or 'text-align:right' in p_style:
+                            p_alignment = "right"
+                        elif 'text-align: justify' in p_style or 'text-align:justify' in p_style:
+                            p_alignment = "justify"
+                    
+                    # Extract formatting
+                    bold = bool(p.find(['strong', 'b']) or (p.get('style') and ('font-weight: bold' in p.get('style') or 'font-weight:bold' in p.get('style'))))
+                    italic = bool(p.find(['em', 'i']) or (p.get('style') and ('font-style: italic' in p.get('style') or 'font-style:italic' in p.get('style'))))
+                    
+                    text_elements.append({
+                        "text": text,
+                        "alignment": p_alignment,
+                        "bold": bold,
+                        "italic": italic,
+                        "font_size": 12,
+                        "element_type": "p"
+                    })
+                    
+                    logger.debug(f"Extracted from div: '{text[:30]}...' -> alignment={p_alignment}, bold={bold}, italic={italic}")
+        
+        # Then handle standalone paragraphs and other elements that aren't inside divs with alignment
+        for element in soup.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6']):
+            # Skip paragraphs that are already processed as children of aligned divs
+            parent_div = element.find_parent('div')
+            if parent_div and parent_div.get('style') and 'text-align:' in parent_div.get('style'):
+                continue  # Already processed above
+            
+            text = element.get_text(strip=True)
+            if not text:
+                continue
+                
+            alignment = "left"  # default
+            
+            # Check for inline styles (style="text-align: center;")
+            if element.get('style'):
+                style = element.get('style', '')
+                if 'text-align: center' in style or 'text-align:center' in style:
+                    alignment = "center"
+                elif 'text-align: right' in style or 'text-align:right' in style:
+                    alignment = "right"
+                elif 'text-align: justify' in style or 'text-align:justify' in style:
+                    alignment = "justify"
+            
+            # Check for CSS classes (class="ql-align-center")
+            if element.get('class'):
+                classes = element.get('class', [])
+                if isinstance(classes, list):
+                    if 'ql-align-center' in classes:
+                        alignment = "center"
+                    elif 'ql-align-right' in classes:
+                        alignment = "right"
+                    elif 'ql-align-justify' in classes:
+                        alignment = "justify"
+                elif isinstance(classes, str):
+                    if 'ql-align-center' in classes:
+                        alignment = "center"
+                    elif 'ql-align-right' in classes:
+                        alignment = "right"
+                    elif 'ql-align-justify' in classes:
+                        alignment = "justify"
+            
+            # Extract formatting information directly from element
+            bold = False
+            italic = False
+            
+            # Check for strong/b tags
+            if element.find(['strong', 'b']) or (element.get('style') and ('font-weight: bold' in element.get('style') or 'font-weight:bold' in element.get('style'))):
+                bold = True
+            
+            # Check for em/i tags
+            if element.find(['em', 'i']) or (element.get('style') and ('font-style: italic' in element.get('style') or 'font-style:italic' in element.get('style'))):
+                italic = True
+            
+            text_elements.append({
+                "text": text,
+                "alignment": alignment,
+                "bold": bold,
+                "italic": italic,
+                "font_size": 12,
+                "element_type": element.name
+            })
+            
+            logger.debug(f"Extracted: '{text[:30]}...' -> alignment={alignment}, bold={bold}, italic={italic}")
+        
+        # If BeautifulSoup extraction found elements, use them directly
+        if text_elements:
+            logger.debug(f"Using direct BeautifulSoup extraction: {len(text_elements)} text blocks")
+            return text_elements
+        
+        # Fallback: Use htmldocx as before but with improved text matching
+        alignment_map = {}
+        elements = soup.find_all(True)
+        
+        for i, element in enumerate(elements):
+            text = element.get_text(strip=True)
+            if not text:
+                continue
+                
+            alignment = "left"  # default
+            
+            # Check for inline styles (style="text-align: center;")
+            if element.get('style'):
+                style = element.get('style', '')
+                if 'text-align: center' in style or 'text-align:center' in style:
+                    alignment = "center"
+                elif 'text-align: right' in style or 'text-align:right' in style:
+                    alignment = "right"
+                elif 'text-align: justify' in style or 'text-align:justify' in style:
+                    alignment = "justify"
+            
+            # Check for QuillTextEditor CSS classes (class="ql-align-center")
+            if element.get('class'):
+                classes = element.get('class', [])
+                if isinstance(classes, list):
+                    if 'ql-align-center' in classes:
+                        alignment = "center"
+                    elif 'ql-align-right' in classes:
+                        alignment = "right"
+                    elif 'ql-align-justify' in classes:
+                        alignment = "justify"
+                elif isinstance(classes, str):
+                    if 'ql-align-center' in classes:
+                        alignment = "center"
+                    elif 'ql-align-right' in classes:
+                        alignment = "right"
+                    elif 'ql-align-justify' in classes:
+                        alignment = "justify"
+            
+            if alignment != "left":
+                # Store alignment for multiple possible text variations
+                alignment_map[text] = alignment
+                alignment_map[text.strip()] = alignment
+                alignment_map[text.replace('\n', ' ')] = alignment
+                alignment_map[text.replace('\n', ' ').strip()] = alignment
+                logger.debug(f"Found {alignment} alignment for: '{text[:50]}...' (element: {element.name})")
+        
+        # Create a new document and use htmldocx
+        document = Document()
+        parser = HtmlToDocx()
+        parser.add_html_to_document(html_content, document)
+        
+        # Convert document back to our block format
+        blocks = []
+        for paragraph in document.paragraphs:
+            if paragraph.text.strip():  # Only add non-empty paragraphs
+                text = paragraph.text.strip()
+                
+                # Check if this text has alignment in our map (try multiple variations)
+                alignment = (alignment_map.get(text) or 
+                           alignment_map.get(text.strip()) or 
+                           alignment_map.get(text.replace('\n', ' ')) or
+                           alignment_map.get(text.replace('\n', ' ').strip()) or
+                           "left")
+                
+                # Check for formatting in runs
+                bold = any(run.bold for run in paragraph.runs if run.bold)
+                italic = any(run.italic for run in paragraph.runs if run.italic)
+                
+                blocks.append({
+                    "text": text,
+                    "alignment": alignment,
+                    "bold": bold,
+                    "italic": italic,
+                    "font_size": 12  # Default size, htmldocx handles actual sizing
+                })
+                
+                logger.debug(f"Block: '{text[:30]}...' -> alignment={alignment}, bold={bold}")
+        
+        logger.debug(f"Successfully converted HTML to {len(blocks)} text blocks")
+        return blocks
+        
+    except Exception as e:
+        logger.error(f"Error converting HTML with htmldocx: {str(e)}")
+        # Fallback to simple text extraction
+        try:
+            soup = BeautifulSoup(html_content, 'html.parser')
+            text = soup.get_text()
+            if text.strip():
+                return [{
+                    "text": text.strip(),
+                    "alignment": "left",
+                    "bold": False,
+                    "italic": False,
+                    "font_size": 12
+                }]
+        except Exception as fallback_error:
+            logger.error(f"Fallback parsing also failed: {str(fallback_error)}")
+        
+        return []
 
 class WordGenerator:
     def __init__(self, formatted_text: List[Dict]):
@@ -46,6 +286,7 @@ class WordGenerator:
                     "color": (0, 0, 0),  
                     "is_bold": item.get("is_bold", False),
                     "is_italic": item.get("is_italic", False),
+                    "alignment": item.get("alignment", "left"),  # ✅ CRITICAL FIX: Preserve alignment!
                     "page": item.get("page", 1),
                     "block_no": item.get("block_no", 0),
                     "line_no": item.get("line_no", 0),
@@ -95,11 +336,27 @@ class WordGenerator:
             
             # Process each page and block
             for page_num in sorted(text_by_blocks.keys()):
-                # Add page break for new pages (except the first page)
-                if page_num > 1:
+                self.logger.info(f"Processing page {page_num} with {len(text_by_blocks[page_num])} blocks")
+                
+                # Check if this page has any content before adding page break
+                page_has_content = False
+                for block_no in text_by_blocks[page_num]:
+                    spans = text_by_blocks[page_num][block_no]
+                    for span in spans:
+                        if span.get("text", "").strip():
+                            page_has_content = True
+                            break
+                    if page_has_content:
+                        break
+                
+                # Only add page break if this page has content and it's not the first page
+                if page_num > 1 and page_has_content:
                     doc.add_page_break()
                 
-                self.logger.info(f"Processing page {page_num} with {len(text_by_blocks[page_num])} blocks")
+                # Skip this page entirely if it has no content
+                if not page_has_content:
+                    self.logger.info(f"Skipping page {page_num} - no content")
+                    continue
                 
                 # Process blocks on this page
                 for block_no in sorted(text_by_blocks[page_num].keys()):
@@ -113,17 +370,43 @@ class WordGenerator:
                     # Sort spans by line and position
                     spans.sort(key=lambda x: (x.get("line_no", 0), x.get("bbox", [0, 0, 0, 0])[0]))
                     
-                    # Check if this is a special formatting block (single span with formatting)
+                    # ALWAYS check for alignment first, regardless of number of spans
+                    # Get alignment from the first span (all spans in a block should have same alignment)
+                    first_span = spans[0] if spans else {}
+                    alignment = first_span.get("alignment")
+                    
+                    # DEBUG: Force print to console (bypassing logger issues)
+                    print(f"🔍 DEBUG WordGenerator: Block '{first_span.get('text', '')[:30]}...' has alignment='{alignment}'")
+                    
+                    # Apply paragraph-level alignment to ALL blocks
+                    if alignment == "center":
+                        current_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+                        print(f"✅ Applied CENTER alignment to block: '{first_span.get('text', '')[:30]}...'")
+                        self.logger.info(f"Applied CENTER alignment to block: '{first_span.get('text', '')[:30]}...'")
+                    elif alignment == "right":
+                        current_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.RIGHT
+                        print(f"✅ Applied RIGHT alignment to block: '{first_span.get('text', '')[:30]}...'")
+                        self.logger.info(f"Applied RIGHT alignment to block: '{first_span.get('text', '')[:30]}...'")
+                    elif alignment == "justify":
+                        current_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
+                        print(f"✅ Applied JUSTIFY alignment to block: '{first_span.get('text', '')[:30]}...'")
+                        self.logger.info(f"Applied JUSTIFY alignment to block: '{first_span.get('text', '')[:30]}...'")
+                    elif first_span.get("is_indent"):
+                        # Add indentation for indent blocks
+                        from docx.shared import Inches
+                        current_paragraph.paragraph_format.left_indent = Inches(0.5)
+                        print(f"✅ Applied INDENT to block: '{first_span.get('text', '')[:30]}...'")
+                        self.logger.info(f"Applied INDENT to block: '{first_span.get('text', '')[:30]}...'")
+                    else:
+                        print(f"❌ No special alignment for block: '{first_span.get('text', '')[:30]}...' (alignment={alignment})")
+                        self.logger.info(f"No special alignment for block: '{first_span.get('text', '')[:30]}...' (alignment={alignment})")
+                    
+                    # Now process the spans - simplified logic since alignment is handled above
                     if len(spans) == 1:
                         span = spans[0]
                         
-                        # Apply paragraph-level formatting for special blocks
-                        if span.get("alignment") == "center":
-                            current_paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-                        elif span.get("is_indent"):
-                            # Add indentation for indent blocks
-                            from docx.shared import Inches
-                            current_paragraph.paragraph_format.left_indent = Inches(0.5)
+                        # Debug: Show what formatting we're applying
+                        self.logger.info(f"Single span block: '{span.get('text', '')[:30]}...' -> bold={span.get('is_bold')}, size={span.get('size')}")
                         
                         # Add the text with appropriate formatting
                         if span.get("text"):

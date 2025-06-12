@@ -15,6 +15,8 @@ class Document(Base):
     status = Column(String, default="uploaded")  # uploaded, processing, completed, error
     
     pages = relationship("Page", back_populates="document", cascade="all, delete-orphan")
+    editable_pdf_texts = relationship("EditablePDFText", back_populates="document", cascade="all, delete-orphan")
+    corrected_texts = relationship("CorrectedText", back_populates="document", cascade="all, delete-orphan")
 
 class Page(Base):
     __tablename__ = "pages"
@@ -49,7 +51,7 @@ class EditablePDFText(Base):
     text_content_by_page = Column(Text) # Could be JSON or another structured format
     extraction_date = Column(DateTime, default=datetime.datetime.utcnow)
 
-    document = relationship("Document", backref="editable_pdf_text_data") # Use backref for simplicity here
+    document = relationship("Document", back_populates="editable_pdf_texts")
 
 class CorrectedText(Base):
     __tablename__ = "corrected_texts"
@@ -61,7 +63,7 @@ class CorrectedText(Base):
     last_update_date = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
     # Potentially add versioning or history if multiple correction passes are needed
 
-    document = relationship("Document", backref="corrected_text_data") # Use backref
+    document = relationship("Document", back_populates="corrected_texts")
 
 # To keep track of user decisions on diffs for a page (optional, could be complex)
 # This is a more granular approach if we want to store individual diff resolutions.

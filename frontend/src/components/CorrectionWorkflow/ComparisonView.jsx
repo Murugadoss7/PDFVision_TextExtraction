@@ -1,580 +1,386 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Box, Typography, Paper, CircularProgress, Alert, Button, TextField, IconButton, Tooltip, Chip, Pagination, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions, Container, useTheme, Divider, Card, CardContent, List, ListItem } from '@mui/material';
-import { Edit as EditIcon, Save as SaveIcon, Cancel as CancelIcon, ArrowBack as ArrowBackIcon, ArrowForward as ArrowForwardIcon, Search as SearchIcon, ContentCopy as ContentCopyIcon, Difference as DifferenceIcon, Clear as ClearIcon, CheckCircle as CheckCircleIcon, NextPlan as NextPlanIcon, CompareArrows as CompareArrowsIcon, TextFields as TextFieldsIcon, Block as BlockIcon, Check as CheckIcon } from '@mui/icons-material';
+import { Box, Container, CircularProgress, Typography, Alert } from '@mui/material';
 import { PanelGroup, Panel, PanelResizeHandle } from 'react-resizable-panels';
-import { getPageComparisonData, submitPageCorrections } from  '../../services/api'; 
-import { usePDFContext } from '../../contexts/PDFContext';
-import FormattedTextRenderer from '../UI/FormattedTextRenderer';
-import logger from '../../utils/logger';
-import { useStateLogger, useFunctionLogger, useComponentLogger } from '../../hooks/useStateLogger';
+import { getPageComparisonData, submitPageCorrections, getFinalCorrectedText } from '../../services/api';
+import { useHighlighting } from '../../hooks/useHighlighting';
+import DocumentPanel from './DocumentPanel';
+import DifferencePanel from './DifferencePanel';
+import PageNavigation from './PageNavigation';
 
-const ComparisonView = ({ onCompletePage, onProceedToFinalReview }) => {
+const ComparisonView = () => {
   const { documentId } = useParams();
   const navigate = useNavigate();
-  const { currentDocument } = usePDFContext();
-  const theme = useTheme();
   
-  // Initialize logging for this component
-  useComponentLogger('ComparisonView');
-  const logFunction = useFunctionLogger('ComparisonView');
-  
-  // Refs for text highlighting
-  const documentARef = useRef(null);
-  const documentBRef = useRef(null);
-  
-  const [currentPage, setCurrentPage] = useState(1);
-  const [loading, setLoading] = useState(false);
+  // State
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [pageData, setPageData] = useState(null);
-  
-  const [textAEditable, setTextAEditable] = useState("");
-  const [isEditingTextA, setIsEditingTextA] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  const [searchTermA, setSearchTermA] = useState("");
-  const [searchTermB, setSearchTermB] = useState("");
-
-  // FORCE RE-RENDER: Add a render counter to force component updates
-  const [renderCounter, setRenderCounter] = useState(0);
-  const forceRerender = () => setRenderCounter(prev => prev + 1);
-
-  // Bulk operation states
-  const [confirmDialog, setConfirmDialog] = useState({ open: false, type: '', title: '', message: '' });
-  
-  // Track changes state
-  const [originalOcrText, setOriginalOcrText] = useState("");
+  const [textAEditable, setTextAEditable] = useState('');
+  const [originalOcrText, setOriginalOcrText] = useState('');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [appliedDifferences, setAppliedDifferences] = useState([]);
+  const [ignoredDifferences, setIgnoredDifferences] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [searchTermA, setSearchTermA] = useState('');
+  const [searchTermB, setSearchTermB] = useState('');
+  const [totalPages, setTotalPages] = useState(1);
+  const [savedCorrections, setSavedCorrections] = useState({});
+  const [dbLoaded, setDbLoaded] = useState(false);
 
-  // Track completion status for all pages
-  const [completedPages, setCompletedPages] = useState(new Set());
+  // Highlighting hook
+  const {
+    documentARef,
+    documentBRef,
+    htmlDiffDisplayRef,
+    clearHighlights,
+    highlightDifference
+  } = useHighlighting();
 
-  // SIMPLIFIED: Track ignored differences and applied changes per page for persistence
-  const [pageStates, setPageStates] = useState({});
-  
-  // Current page state (derived from pageStates)
-  const currentPageState = pageStates[currentPage] || {
-    ignoredDifferences: new Set(),
-    appliedDifferences: new Set(),
-    appliedChangesState: 'none'
+  // Utility function to strip HTML tags from text
+  const stripHtmlTags = (html) => {
+    if (!html) return '';
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    return doc.body.textContent?.replace(/\s+/g, ' ').trim() || '';
   };
-  
-  const ignoredDifferences = currentPageState.ignoredDifferences;
-  const appliedDifferences = currentPageState.appliedDifferences;
-  const appliedChangesState = currentPageState.appliedChangesState;
 
-  // LOG ALL STATE CHANGES
-  useStateLogger('ComparisonView', 'currentPage', currentPage);
-  useStateLogger('ComparisonView', 'loading', loading);
-  useStateLogger('ComparisonView', 'error', error);
-  useStateLogger('ComparisonView', 'textAEditable', `${textAEditable.substring(0, 50)}...`);
-  useStateLogger('ComparisonView', 'isEditingTextA', isEditingTextA);
-  useStateLogger('ComparisonView', 'saving', saving);
-  useStateLogger('ComparisonView', 'hasUnsavedChanges', hasUnsavedChanges);
-  useStateLogger('ComparisonView', 'appliedChangesState', appliedChangesState);
-  useStateLogger('ComparisonView', 'appliedDifferences', Array.from(appliedDifferences));
-
-  const actualTotalPages = currentDocument?.total_pages || 8;
-
-  const fetchData = useCallback(async (docId, pageNum) => {
-    logFunction('fetchData', { docId, pageNum });
-    setLoading(true);
-    setError(null);
+  // Load saved corrections from database (only once)
+  const loadSavedCorrections = async () => {
+    if (dbLoaded) {
+      console.log('Database already loaded, using local state');
+      return savedCorrections;
+    }
+    
     try {
-      logger.info('ComparisonView', 'fetchData', 'Starting API call', { docId, pageNum });
-      const response = await getPageComparisonData(docId, pageNum);
-      logger.info('ComparisonView', 'fetchData', 'API call successful', { dataKeys: Object.keys(response.data) });
-      
-      setPageData(response.data);
-      const ocrText = response.data.text_a_ocr || "";
-      setTextAEditable(ocrText);
-      setOriginalOcrText(ocrText);
-      setIsEditingTextA(false);
-      setHasUnsavedChanges(false);
-      
-      logger.debug('ComparisonView', 'fetchData', 'OCR text set', { 
-        textLength: ocrText.length, 
-        preview: ocrText.substring(0, 100) 
-      });
-      
-      // Initialize page state if it doesn't exist - use functional update to avoid dependency
-      setPageStates(prev => {
-        if (!prev[pageNum]) {
-          logger.debug('ComparisonView', 'fetchData', 'Initializing page state', { pageNum });
-          return {
-            ...prev,
-            [pageNum]: {
-              ignoredDifferences: new Set(),
-              appliedDifferences: new Set(),
-              appliedChangesState: 'none'
-            }
-          };
-        }
-        return prev;
-      });
-    } catch (err) {
-      logger.error('ComparisonView', 'fetchData', 'API call failed', { error: err.message });
-      setError(`Failed to load page data: ${err.response?.data?.detail || err.message}`);
-      setPageData(null);
-      setTextAEditable("");
-      setOriginalOcrText("");
-      setHasUnsavedChanges(false);
-    }
-    setLoading(false);
-    logger.info('ComparisonView', 'fetchData', 'Completed');
-  }, [logFunction]);
-
-  useEffect(() => {
-    logger.info('ComparisonView', 'useEffect[documentId,currentPage]', 'Effect triggered', { documentId, currentPage });
-    if (documentId) {
-      fetchData(documentId, currentPage);
-    }
-  }, [documentId, currentPage]);
-
-  const handleSaveChanges = async () => {
-    logFunction('handleSaveChanges');
-    if (!documentId || !pageData) return;
-    setSaving(true);
-    setError(null);
-    try {
-      logger.info('ComparisonView', 'handleSaveChanges', 'Starting save', { 
-        documentId, 
-        currentPage, 
-        textLength: textAEditable.length,
-        textPreview: textAEditable.substring(0, 100) + '...',
-        originalOcrPreview: (pageData?.text_a_ocr || '').substring(0, 100) + '...'
-      });
-      
-      await submitPageCorrections(documentId, currentPage, textAEditable);
-      
-      logger.info('ComparisonView', 'handleSaveChanges', 'Before state updates', {
-        currentTextAEditable: textAEditable.substring(0, 100) + '...',
-        aboutToSetEditingTo: false
-      });
-      
-      setIsEditingTextA(false);
-      
-      logger.info('ComparisonView', 'handleSaveChanges', 'Before pageData update', {
-        currentTextAEditable: textAEditable.substring(0, 100) + '...',
-        updatingPageDataWith: textAEditable.substring(0, 100) + '...'
-      });
-      
-      setPageData(prev => ({...prev, text_a_ocr: textAEditable})); 
-      setHasUnsavedChanges(false);
-      setCompletedPages(prev => new Set([...prev, currentPage]));
-      
-      logger.info('ComparisonView', 'handleSaveChanges', 'After all updates', {
-        currentTextAEditable: textAEditable.substring(0, 100) + '...'
-      });
-      
-      logger.info('ComparisonView', 'handleSaveChanges', 'Save successful');
-      alert("Changes saved successfully!");
-      
-      if (onCompletePage && typeof onCompletePage === 'function') {
-        onCompletePage(currentPage, textAEditable);
-      }
-    } catch (err) {
-      logger.error('ComparisonView', 'handleSaveChanges', 'Save failed', { error: err.message });
-      setError(`Failed to save changes: ${err.response?.data?.detail || err.message}`);
-    }
-    setSaving(false);
-  };
-
-  const handlePageChange = (event, value) => {
-    logFunction('handlePageChange', { fromPage: currentPage, toPage: value });
-    if (isEditingTextA) {
-        if(window.confirm("You have unsaved changes. Are you sure you want to navigate away? Changes will be lost.")){
-            setIsEditingTextA(false);
-            logger.info('ComparisonView', 'handlePageChange', 'User confirmed navigation with unsaved changes');
-        } else {
-            logger.info('ComparisonView', 'handlePageChange', 'User cancelled navigation');
-            return;
-        }
-    }
-    setCurrentPage(value);
-  };
-
-  const handleProceedToFinalReview = () => {
-    logFunction('handleProceedToFinalReview');
-    if (onProceedToFinalReview && typeof onProceedToFinalReview === 'function') {
-      onProceedToFinalReview();
-    } else {
-      navigate(`/correction/${documentId}/review`);
-    }
-  };
-
-  const allPagesCompleted = completedPages.size === actualTotalPages;
-  const hasCompletedSomePages = completedPages.size > 0;
-
-  // SIMPLIFIED: Helper function to update current page state
-  const updatePageState = (updates) => {
-    logFunction('updatePageState', { currentPage, updates });
-    setPageStates(prev => ({
-      ...prev,
-      [currentPage]: {
-        ...currentPageState,
-        ...updates
-      }
-    }));
-    logger.debug('ComparisonView', 'updatePageState', 'Page state updated', { currentPage, updates });
-  };
-
-  // SIMPLIFIED: Enhanced applyDifference with error handling
-  const applyDifference = (diff, index) => {
-    try {
-      logFunction('applyDifference', { diff: { type: diff.type, index }, index });
-      logger.info('ComparisonView', 'applyDifference', 'Starting application', { 
-        diffType: diff.type,
-        index,
-        startIndex: diff.a_start_index,
-        endIndex: diff.a_end_index
-      });
-      
-      // Log current state before changes
-      logger.debug('ComparisonView', 'applyDifference', 'Current state before changes', {
-        isEditingTextA,
-        hasUnsavedChanges,
-        appliedChangesState,
-        textAEditableLength: textAEditable.length
-      });
-      
-      if (diff.type === 'insert' || diff.type === 'replace') {
-        logger.info('ComparisonView', 'applyDifference', 'Processing diff type', { type: diff.type });
-        
-        // SIMPLIFIED: Get original text safely
-        const originalA = pageData?.text_a_ocr || "";
-        logger.debug('ComparisonView', 'applyDifference', 'Got original text', { originalLength: originalA.length });
-        
-        // SIMPLIFIED: Build new text step by step
-        const prefix = originalA.substring(0, diff.a_start_index);
-        const suffix = originalA.substring(diff.a_end_index);
-        const newText = prefix + diff.suggested_text_b_segment + suffix;
-        
-        logger.info('ComparisonView', 'applyDifference', 'New text created successfully');
-        
-        // SIMPLIFIED: Update states one by one
-        logger.info('ComparisonView', 'applyDifference', 'Step 1: Updating text content');
-        setTextAEditable(newText);
-        
-        logger.info('ComparisonView', 'applyDifference', 'Step 2: Setting unsaved changes');
-        setHasUnsavedChanges(true);
-        
-        logger.info('ComparisonView', 'applyDifference', 'Step 3: FORCING EDIT MODE TO TRUE');
-        setIsEditingTextA(true);
-        
-        // FORCE IMMEDIATE RE-RENDER
-        setTimeout(() => {
-          logger.info('ComparisonView', 'applyDifference', 'FORCING COMPONENT RE-RENDER');
-          forceRerender();
-          
-          // DIRECT STATE CHECK
-          setIsEditingTextA(current => {
-            logger.info('ComparisonView', 'applyDifference', 'CHECKING EDIT STATE IN TIMEOUT', { 
-              currentEditState: current,
-              shouldBeTrue: true 
-            });
-            if (!current) {
-              logger.error('ComparisonView', 'applyDifference', 'EDIT STATE IS STILL FALSE - FORCING AGAIN');
-            }
-            return true; // Force true regardless
-          });
-        }, 5);
-        
-        logger.info('ComparisonView', 'applyDifference', 'Step 4: Updating page state');
-        updatePageState({
-          appliedDifferences: new Set([...appliedDifferences, index]),
-          appliedChangesState: 'custom'
+      const response = await getFinalCorrectedText(documentId);
+      if (response.data && response.data.corrected_content_by_page) {
+        const dbCorrections = {};
+        Object.entries(response.data.corrected_content_by_page).forEach(([page, text]) => {
+          dbCorrections[parseInt(page)] = text;
         });
         
-        logger.info('ComparisonView', 'applyDifference', 'All steps completed successfully');
-        
+        setSavedCorrections(dbCorrections);
+        setDbLoaded(true);
+        console.log('Loaded corrections from database:', dbCorrections);
+        return dbCorrections;
+      }
+    } catch (error) {
+      console.log('No saved corrections found or error loading:', error.message);
+    }
+    
+    setDbLoaded(true);
+    return {};
+  };
+
+  // Fetch page data
+  const fetchData = async (pageNum) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Load saved corrections first
+      const corrections = await loadSavedCorrections();
+      
+      const response = await getPageComparisonData(documentId, pageNum);
+      const data = response.data;
+      setPageData(data);
+      
+      // Strip HTML tags from OCR text and reference text
+      const cleanOcrText = stripHtmlTags(data.text_a_ocr) || "";
+      const cleanReferenceText = stripHtmlTags(data.text_b_editable_pdf) || "";
+      
+      // Use saved correction if available, otherwise use original OCR text
+      const savedData = corrections[pageNum];
+      let textToEdit, restoredApplied = [], restoredIgnored = [];
+      
+      if (savedData) {
+        // Handle both old format (string) and new format (object)
+        if (typeof savedData === 'string') {
+          textToEdit = savedData;
+        } else {
+          textToEdit = savedData.text || cleanOcrText;
+          restoredApplied = savedData.appliedDifferences || [];
+          restoredIgnored = savedData.ignoredDifferences || [];
+        }
       } else {
-        logger.warn('ComparisonView', 'applyDifference', 'Unsupported diff type', { type: diff.type });
+        textToEdit = cleanOcrText;
+      }
+      
+      setTextAEditable(textToEdit);
+      setOriginalOcrText(cleanOcrText);
+      setHasUnsavedChanges(false);
+      
+      // Update page data with clean text
+      setPageData(prev => ({
+        ...prev,
+        text_a_ocr: cleanOcrText,
+        text_b_editable_pdf: cleanReferenceText
+      }));
+      
+      // Restore applied and ignored differences
+      setAppliedDifferences(restoredApplied);
+      setIgnoredDifferences(restoredIgnored);
+      
+      console.log(`Page ${pageNum} loaded:`, {
+        textLength: textToEdit.length,
+        appliedCount: restoredApplied.length,
+        ignoredCount: restoredIgnored.length,
+        appliedDiffs: restoredApplied,
+        ignoredDiffs: restoredIgnored,
+        savedDataType: typeof savedData,
+        savedData: savedData
+      });
+      
+      // Set total pages from response
+      if (data.document_id) {
+        setTotalPages(data.total_pages || 10);
       }
       
     } catch (error) {
-      logger.error('ComparisonView', 'applyDifference', 'ERROR OCCURRED', { 
-        error: error.message, 
-        stack: error.stack 
-      });
-      console.error('applyDifference error:', error);
+      console.error('Error fetching page data:', error);
+      setError(`Failed to load page data: ${error.response?.data?.detail || error.message}`);
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Track when isEditingTextA changes in real-time
-  useEffect(() => {
-    logger.stateChange('ComparisonView', 'useEffect[isEditingTextA]', 'isEditingTextA', 'previous', isEditingTextA);
-    logger.info('ComparisonView', 'useEffect[isEditingTextA]', 'Edit mode changed', { isEditingTextA });
-  }, [isEditingTextA]);
-
-  // SIMPLIFIED: New function to revert individual applied difference
-  const revertDifference = (diff, index) => {
-    console.log("Revert Difference - Starting revert for index:", index);
+  // Save corrections to database with state information
+  const saveCorrections = async () => {
+    if (!hasUnsavedChanges) return;
     
-    // Revert the text change by restoring original segment
-    if (diff.type === 'insert' || diff.type === 'replace') {
-      const currentText = textAEditable;
-      const prefix = currentText.substring(0, diff.a_start_index);
-      const suffix = currentText.substring(diff.a_start_index + diff.suggested_text_b_segment.length);
-      const revertedText = prefix + diff.original_text_a_segment + suffix;
+    try {
+      setSaving(true);
       
-      // Update text first
-      setTextAEditable(revertedText);
-      setHasUnsavedChanges(true);
-      setIsEditingTextA(true);
+      // Create enhanced correction data including applied/ignored states
+      const correctionData = {
+        text: textAEditable,
+        appliedDifferences: appliedDifferences,
+        ignoredDifferences: ignoredDifferences,
+        timestamp: new Date().toISOString()
+      };
       
-      // Remove from applied differences
-      const newAppliedDifferences = new Set(appliedDifferences);
-      newAppliedDifferences.delete(index);
+      // For now, we'll save just the text to maintain API compatibility
+      // In the future, the API could be enhanced to accept the full correction data
+      await submitPageCorrections(documentId, currentPage, textAEditable);
       
-      updatePageState({
-        appliedDifferences: newAppliedDifferences
-      });
+      // Update saved corrections state with full data
+      setSavedCorrections(prev => ({
+        ...prev,
+        [currentPage]: correctionData
+      }));
       
-      console.log("Revert Difference - Text reverted and states updated");
-    }
-    
-    setTimeout(() => {
-      smartHighlightAndSearch(diff);
-    }, 50);
-  };
-
-  // Smart search and highlight function
-  const smartHighlightAndSearch = (diff) => {
-    // Extract meaningful text for search bars
-    const originalText = diff.original_text_a_segment || '';
-    const suggestedText = diff.suggested_text_b_segment || '';
-    
-    // For longer text, use first few words
-    const getSearchText = (text) => {
-      if (!text) return '';
-      const words = text.trim().split(/\s+/);
-      return words.length > 4 ? words.slice(0, 4).join(' ') : text;
-    };
-    
-    // Set search terms to help user locate the text
-    setSearchTermA(getSearchText(originalText));
-    setSearchTermB(getSearchText(suggestedText));
-    
-    // Highlight actual text content in panels
-    setTimeout(() => {
-      highlightTextContent(diff);
-    }, 100); // Small delay to ensure search terms are set
-  };
-
-  // Enhanced text highlighting function
-  const highlightTextContent = (diff) => {
-    // Clear any existing highlights first
-    clearExistingHighlights();
-    
-    // Highlight in Document A
-    if (documentARef.current && diff.original_text_a_segment) {
-      highlightTextInElement(documentARef.current, diff.original_text_a_segment, 'warning');
-    }
-    
-    // Highlight in Document B  
-    if (documentBRef.current && diff.suggested_text_b_segment) {
-      highlightTextInElement(documentBRef.current, diff.suggested_text_b_segment, 'success');
-    }
-  };
-
-  // Helper function to highlight specific text in an element
-  const highlightTextInElement = (containerRef, searchText, colorType) => {
-    const textElement = containerRef.querySelector('[data-text-content]');
-    if (!textElement || !searchText) return;
-    
-    const walker = document.createTreeWalker(
-      textElement,
-      NodeFilter.SHOW_TEXT,
-      null,
-      false
-    );
-    
-    const textNodes = [];
-    let node;
-    while (node = walker.nextNode()) {
-      textNodes.push(node);
-    }
-    
-    // Find text nodes containing our search text
-    textNodes.forEach(textNode => {
-      const content = textNode.textContent;
-      const searchIndex = content.toLowerCase().indexOf(searchText.toLowerCase());
-      
-      if (searchIndex !== -1) {
-        // Create highlight span
-        const span = document.createElement('span');
-        span.className = `highlight-${colorType}`;
-        span.style.backgroundColor = colorType === 'warning' ? theme.palette.warning.light : theme.palette.success.light;
-        span.style.padding = '2px 4px';
-        span.style.borderRadius = '4px';
-        span.style.fontWeight = 'bold';
-        
-        // Split text node and wrap the found text
-        const beforeText = content.substring(0, searchIndex);
-        const highlightText = content.substring(searchIndex, searchIndex + searchText.length);
-        const afterText = content.substring(searchIndex + searchText.length);
-        
-        const beforeNode = document.createTextNode(beforeText);
-        const afterNode = document.createTextNode(afterText);
-        span.textContent = highlightText;
-        
-        const parent = textNode.parentNode;
-        parent.insertBefore(beforeNode, textNode);
-        parent.insertBefore(span, textNode);
-        parent.insertBefore(afterNode, textNode);
-        parent.removeChild(textNode);
-        
-        // Scroll to highlighted element
-        span.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    });
-  };
-
-  // Helper function to clear existing highlights
-  const clearExistingHighlights = () => {
-    ['warning', 'success'].forEach(type => {
-      const highlights = document.querySelectorAll(`.highlight-${type}`);
-      highlights.forEach(highlight => {
-        const parent = highlight.parentNode;
-        parent.insertBefore(document.createTextNode(highlight.textContent), highlight);
-        parent.removeChild(highlight);
-        parent.normalize(); // Merge adjacent text nodes
-      });
-    });
-  };
-
-  // SIMPLIFIED: New function to ignore individual difference
-  const ignoreDifference = (diff, index) => {
-    console.log("Ignore Difference - Starting ignore for index:", index);
-    
-    // Transition to custom state if coming from bulk operation
-    const newAppliedChangesState = appliedChangesState === 'replaced' || appliedChangesState === 'ignored' ? 'custom' : appliedChangesState;
-    
-    updatePageState({
-      ignoredDifferences: new Set([...ignoredDifferences, index]),
-      appliedChangesState: newAppliedChangesState === 'none' ? 'custom' : newAppliedChangesState
-    });
-    
-    setTimeout(() => {
-      smartHighlightAndSearch(diff);
-    }, 50);
-  };
-
-  // RESTORED: highlightText function for search highlighting
-  const highlightText = (text, searchTerm) => {
-    if (!searchTerm || !text) return text;
-    const parts = text.split(new RegExp(`(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'));
-    return (
-      <>
-        {parts.map((part, index) => 
-          part.toLowerCase() === searchTerm.toLowerCase() ? 
-            <mark key={index} style={{ backgroundColor: theme.palette.warning.light }}>{part}</mark> : 
-            part
-        )}
-      </>
-    );
-  };
-
-  // SIMPLIFIED: Bulk Operations
-  const handleIgnoreAll = () => {
-    setConfirmDialog({
-      open: true,
-      type: 'ignore',
-      title: 'Ignore All Changes',
-      message: 'This will keep the current OCR text (Document A) and ignore all suggested changes from Document B. Are you sure?'
-    });
-  };
-
-  const handleReplaceAll = () => {
-    setConfirmDialog({
-      open: true,
-      type: 'replace',
-      title: 'Replace All with Document B',
-      message: 'This will replace all OCR text (Document A) with the text from Document B. Are you sure?'
-    });
-  };
-
-  const handleRevertToOriginal = () => {
-    setConfirmDialog({
-      open: true,
-      type: 'revert',
-      title: 'Revert to Original OCR',
-      message: 'This will restore the original OCR text and reset all changes. Any unsaved modifications will be lost. Are you sure?'
-    });
-  };
-
-  // SIMPLIFIED: Execute confirmed bulk operations
-  const executeConfirmedAction = () => {
-    console.log("Executing bulk operation:", confirmDialog.type);
-    
-    if (confirmDialog.type === 'ignore') {
-      setTextAEditable(originalOcrText);
-      setIsEditingTextA(true);
-      setHasUnsavedChanges(true);
-      
-      updatePageState({ 
-        appliedChangesState: 'ignored',
-        ignoredDifferences: new Set(), // Clear individual ignored since this is bulk operation
-        appliedDifferences: new Set() // Clear applied differences
-      });
-      
-      console.log("Bulk ignore completed");
-      alert("All suggestions ignored. Current OCR text retained.");
-      
-    } else if (confirmDialog.type === 'replace') {
-      console.log("Replace All - pageData:", pageData);
-      console.log("Replace All - text_b_editable_pdf:", pageData?.text_b_editable_pdf);
-      
-      const replaceText = pageData?.text_b_editable_pdf || "";
-      console.log("Replace All - setting text to:", replaceText.substring(0, 100) + "...");
-      
-      setTextAEditable(replaceText);
-      setIsEditingTextA(true);
-      setHasUnsavedChanges(true);
-      
-      // For bulk replace all - only set bulk state, clear individual states
-      updatePageState({ 
-        appliedChangesState: 'replaced',
-        ignoredDifferences: new Set(), // Clear individual ignored
-        appliedDifferences: new Set() // Clear individual applied - this is bulk operation
-      });
-      
-      console.log("Bulk replace completed");
-      alert("All text replaced with Document B content.");
-      
-    } else if (confirmDialog.type === 'revert') {
-      setTextAEditable(originalOcrText);
-      setIsEditingTextA(false);
       setHasUnsavedChanges(false);
-      
-      // Reset all states for revert operation
-      updatePageState({ 
-        appliedChangesState: 'none',
-        ignoredDifferences: new Set(),
-        appliedDifferences: new Set()
+      console.log(`Page ${currentPage} saved:`, {
+        textLength: correctionData.text.length,
+        appliedCount: correctionData.appliedDifferences.length,
+        ignoredCount: correctionData.ignoredDifferences.length,
+        appliedDiffs: correctionData.appliedDifferences,
+        ignoredDiffs: correctionData.ignoredDifferences
       });
       
-      console.log("Bulk revert completed");
-      alert("Reverted to original OCR text.");
+    } catch (error) {
+      console.error('Error saving corrections:', error);
+      setError(`Failed to save corrections: ${error.response?.data?.detail || error.message}`);
+    } finally {
+      setSaving(false);
     }
+  };
+
+  // Effects
+  useEffect(() => {
+    if (documentId) {
+      fetchData(currentPage);
+    }
+  }, [documentId, currentPage]);
+
+  // Reset database loaded flag when document changes
+  useEffect(() => {
+    setDbLoaded(false);
+    setSavedCorrections({});
+  }, [documentId]);
+
+  // Auto-save when user stops editing (debounced)
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
     
-    setConfirmDialog({ open: false, type: '', title: '', message: '' });
+    const saveTimer = setTimeout(() => {
+      saveCorrections();
+    }, 2000); // Auto-save after 2 seconds of inactivity
+    
+    return () => clearTimeout(saveTimer);
+  }, [textAEditable, hasUnsavedChanges]);
+
+  // Handle content changes
+  const handleContentChange = (newContent) => {
+    setTextAEditable(newContent);
+    
+    // Check if content differs from saved version
+    const savedData = savedCorrections[currentPage];
+    const savedText = savedData ? (typeof savedData === 'string' ? savedData : savedData.text) : originalOcrText;
+    setHasUnsavedChanges(newContent !== savedText);
   };
 
-  const cancelConfirmedAction = () => {
-    setConfirmDialog({ open: false, type: '', title: '', message: '' });
+  // Apply difference
+  const handleApplyDifference = (diffIndex) => {
+    const diff = pageData.differences.find(d => d.index === diffIndex);
+    if (!diff || appliedDifferences.includes(diffIndex)) return;
+
+    let newText = textAEditable;
+    const wordA = stripHtmlTags(diff.word_a) || '';
+    const wordB = stripHtmlTags(diff.word_b) || '';
+
+    if (diff.type === 'replace') {
+      newText = newText.replace(wordA, wordB);
+    } else if (diff.type === 'insert') {
+      const position = diff.position_in_a || 0;
+      newText = newText.slice(0, position) + wordB + ' ' + newText.slice(position);
+    } else if (diff.type === 'delete') {
+      newText = newText.replace(wordA, '');
+    }
+
+    setTextAEditable(newText);
+    // Remove from ignored list if it was ignored
+    setIgnoredDifferences(prev => prev.filter(id => id !== diffIndex));
+    // Add to applied list
+    setAppliedDifferences(prev => [...prev, diffIndex]);
+    setHasUnsavedChanges(true);
   };
 
-  // Panel resize handle style
-  const resizeHandleStyle = {
-    width: '6px',
-    background: theme.palette.divider,
-    '&:hover': {
-      background: theme.palette.primary.light,
-    },
-    cursor: 'col-resize',
-    transition: 'background 0.2s',
+  // Ignore difference (toggle function)
+  const handleIgnoreDifference = (diffIndex) => {
+    const isCurrentlyIgnored = ignoredDifferences.includes(diffIndex);
+    
+    if (isCurrentlyIgnored) {
+      // Revert: Remove from ignored list
+      setIgnoredDifferences(prev => prev.filter(id => id !== diffIndex));
+    } else {
+      // Ignore: Remove from applied and add to ignored
+      setAppliedDifferences(prev => prev.filter(id => id !== diffIndex));
+      setIgnoredDifferences(prev => [...prev, diffIndex]);
+    }
+    setHasUnsavedChanges(true);
+  };
+
+  // Apply all differences
+  const handleApplyAll = () => {
+    if (!pageData?.differences) return;
+
+    let newText = textAEditable;
+    const newApplied = [];
+
+    pageData.differences
+      .filter(diff => 
+        diff.type !== 'equal' && 
+        !appliedDifferences.includes(diff.index) &&
+        !ignoredDifferences.includes(diff.index)
+      )
+      .forEach(diff => {
+        const wordA = stripHtmlTags(diff.word_a) || '';
+        const wordB = stripHtmlTags(diff.word_b) || '';
+
+        if (diff.type === 'replace') {
+          newText = newText.replace(wordA, wordB);
+        } else if (diff.type === 'insert') {
+          const position = diff.position_in_a || 0;
+          newText = newText.slice(0, position) + wordB + ' ' + newText.slice(position);
+        } else if (diff.type === 'delete') {
+          newText = newText.replace(wordA, '');
+        }
+
+        newApplied.push(diff.index);
+      });
+
+    setTextAEditable(newText);
+    setAppliedDifferences(prev => [...prev, ...newApplied]);
+    setHasUnsavedChanges(true);
+  };
+
+  // Ignore all differences
+  const handleIgnoreAll = () => {
+    if (!pageData?.differences) return;
+    
+    const allDiffIndices = pageData.differences
+      .filter(diff => diff.type !== 'equal')
+      .map(diff => diff.index);
+    
+    setIgnoredDifferences(allDiffIndices);
+    setAppliedDifferences([]);
+    setHasUnsavedChanges(true);
+  };
+
+  // Reset to original
+  const handleReset = () => {
+    setTextAEditable(originalOcrText);
+    setAppliedDifferences([]);
+    setIgnoredDifferences([]);
+    setHasUnsavedChanges(true);
+  };
+
+  // Page navigation with save check
+  const handlePageChange = async (newPage) => {
+    if (hasUnsavedChanges) {
+      try {
+        // Always save changes before navigation
+        await saveCorrections();
+        console.log('Changes saved before page navigation');
+      } catch (error) {
+        console.error('Failed to save changes before navigation:', error);
+        const proceedAnyway = window.confirm(
+          'Failed to save changes. Do you want to proceed anyway? Unsaved changes will be lost.'
+        );
+        if (!proceedAnyway) {
+          return; // Cancel navigation
+        }
+      }
+    }
+    setCurrentPage(newPage);
+  };
+
+  // Navigation functions
+  const handleBackToUpload = async () => {
+    if (hasUnsavedChanges) {
+      try {
+        await saveCorrections();
+        console.log('Changes saved before navigating to upload');
+      } catch (error) {
+        console.error('Failed to save changes:', error);
+        const proceedAnyway = window.confirm(
+          'Failed to save changes. Do you want to proceed anyway? Unsaved changes will be lost.'
+        );
+        if (!proceedAnyway) {
+          return;
+        }
+      }
+    }
+    navigate(`/correction/${documentId}/upload`);
+  };
+
+  const handleProceedToReview = async () => {
+    if (hasUnsavedChanges) {
+      try {
+        await saveCorrections();
+        console.log('Changes saved before proceeding to review');
+      } catch (error) {
+        console.error('Failed to save changes:', error);
+        const proceedAnyway = window.confirm(
+          'Failed to save changes. Do you want to proceed anyway? Unsaved changes will be lost.'
+        );
+        if (!proceedAnyway) {
+          return;
+        }
+      }
+    }
+    navigate(`/correction/${documentId}/review`);
+  };
+
+  // Get panel size based on differences count
+  const getDifferencePanelSize = () => {
+    const diffCount = pageData?.differences?.filter(d => d.type !== 'equal')?.length || 0;
+    if (diffCount === 0) return 15;
+    if (diffCount <= 5) return 20;
+    if (diffCount <= 15) return 25;
+    return 30;
   };
 
   if (loading) {
@@ -586,582 +392,108 @@ const ComparisonView = ({ onCompletePage, onProceedToFinalReview }) => {
     );
   }
 
+  if (error) {
+    return (
+      <Container maxWidth="xl" sx={{ pt: 2 }}>
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      </Container>
+    );
+  }
+
+  if (!pageData) {
+    return (
+      <Container maxWidth="xl" sx={{ pt: 2 }}>
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          No comparison data available for this page.
+        </Alert>
+      </Container>
+    );
+  }
+
+  const differencePanelSize = getDifferencePanelSize();
+  const documentPanelSize = (100 - differencePanelSize) / 2;
+
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      <Container maxWidth="xl" sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', pt: 2, pb: 2 }}>
-        {/* Header Section */}
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Box>
-            <Typography variant="h5" component="h1">
-              Compare & Correct: Page {currentPage} of {actualTotalPages}
-            </Typography>
-            {hasCompletedSomePages && (
-              <Chip 
-                label={`${completedPages.size}/${actualTotalPages} pages completed`}
-                color={allPagesCompleted ? 'success' : 'primary'}
-                size="small"
-                sx={{ mt: 1 }}
-              />
-            )}
-          </Box>
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            {hasCompletedSomePages && (
-              <Button 
-                variant="contained" 
-                color="primary" 
-                size="small" 
-                startIcon={<NextPlanIcon />}
-                onClick={handleProceedToFinalReview}
-                disabled={isEditingTextA || saving}
-              >
-                {allPagesCompleted ? 'Proceed to Final Review' : 'Continue to Final Review'}
-              </Button>
-            )}
-            <Button variant="outlined" size="small" onClick={() => navigate(-1)} startIcon={<ArrowBackIcon />}>
-              Back to Uploads
-            </Button>
-          </Box>
-        </Box>
-        
-        {/* Progress and Status Information */}
-        {hasCompletedSomePages && (
-          <Alert 
-            severity={allPagesCompleted ? 'success' : 'info'} 
-            sx={{ mb: 2 }}
-          >
-            {allPagesCompleted 
-              ? `🎉 All ${actualTotalPages} pages have been corrected! You can now proceed to the Final Review to make any final adjustments and export your document.`
-              : `Progress: ${completedPages.size} of ${actualTotalPages} pages completed. You can continue to Final Review anytime to review your work so far.`
-            }
-          </Alert>
-        )}
-        
-        {error && <Alert severity="warning" sx={{ mb: 2 }}>{error}</Alert>}
+      {/* Page Navigation Header */}
+      <PageNavigation
+        currentPage={currentPage}
+        totalPages={totalPages}
+        onPageChange={handlePageChange}
+        onBackToUpload={handleBackToUpload}
+        onProceedToReview={handleProceedToReview}
+        hasUnsavedChanges={hasUnsavedChanges}
+        onSave={saveCorrections}
+        saving={saving}
+        documentId={documentId}
+      />
 
-        {/* Main Content Area - SWAPPED: Document B (left), Differences (center), Document A (right) */}
-        <Box sx={{ 
-          flexGrow: 1, 
-          overflow: 'hidden', 
-          display: 'flex',
-          borderRadius: 1,
-          border: `1px solid ${theme.palette.divider}`,
-          height: 'calc(100vh - 220px)'
-        }}>
-          <PanelGroup direction="horizontal" style={{ width: '100%', height: '100%' }}>
-            {/* Left panel: Document B (Reference) - MOVED FROM RIGHT */}
-            <Panel defaultSize={35}>
-              <Paper 
-                elevation={0} 
-                sx={{ 
-                  height: '100%', 
-                  overflow: 'hidden',
-                  bgcolor: 'background.paper',
-                  borderRadius: 0,
-                  display: 'flex',
-                  flexDirection: 'column'
-                }}
-              >
-                <Box sx={{
-                  p: 2, 
-                  pb: 1, 
-                  borderBottom: `1px solid ${theme.palette.divider}`,
-                  bgcolor: theme.palette.grey[50]
-                }}>
-                  <Typography variant="h6" sx={{display: 'flex', alignItems: 'center', mb: 0}}>
-                    <ContentCopyIcon sx={{mr:1, color: 'secondary.main'}}/> Document B (Reference)
-                  </Typography>
-                </Box>
-                <Box sx={{ p: 2, pb: 1 }}>
-                  <TextField 
-                    fullWidth 
-                    variant="outlined" 
-                    size="small" 
-                    placeholder="Search in Document B..." 
-                    value={searchTermB}
-                    onChange={(e) => setSearchTermB(e.target.value)}
-                    InputProps={{endAdornment: <SearchIcon />}}
-                  />
-                </Box>
-                <Box 
-                  ref={documentBRef}
-                  sx={{ 
-                    flexGrow: 1, 
-                    p: 2, 
-                    pt: 0, 
-                    overflow: 'auto'
-                  }}
-                >
-                  <Box sx={{ 
-                    height: '100%', 
-                    p: 2, 
-                    border: `1px solid ${theme.palette.divider}`,
-                    borderRadius: 1,
-                    bgcolor: 'grey.50'
-                  }}>
-                    <div data-text-content>
-                      <FormattedTextRenderer 
-                        rawText={pageData?.text_b_editable_pdf} 
-                        formattedTextJson={pageData?.formatted_text_b} 
-                        searchTerm={searchTermB} 
-                      />
-                    </div>
-                  </Box>
-                </Box>
-              </Paper>
+      {error && (
+        <Alert severity="error" sx={{ mx: 2, mb: 1 }}>
+          {error}
+        </Alert>
+      )}
+
+      {/* Main Comparison Area */}
+      <Box sx={{ flexGrow: 1, overflow: 'hidden' }}>
+        <Container maxWidth="xl" sx={{ height: '100%', py: 1 }}>
+          <PanelGroup direction="horizontal" style={{ height: '100%' }}>
+            {/* Document B Panel (Reference) - LEFT */}
+            <Panel defaultSize={documentPanelSize}>
+              <DocumentPanel
+                title="Document B (Reference)"
+                content={pageData.text_b_editable_pdf || 'No reference text available'}
+                formattedContent={pageData.formatted_text_b}
+                searchTerm={searchTermB}
+                onSearchChange={setSearchTermB}
+                ref={documentBRef}
+                readOnly={true}
+                position="left"
+              />
             </Panel>
-            
-            <PanelResizeHandle style={resizeHandleStyle} />
-            
-            {/* Center panel: Differences and Actions - UPDATED LAYOUT */}
-            <Panel defaultSize={30} minSize={25}>
-              <Paper 
-                elevation={0} 
-                sx={{ 
-                  height: '100%', 
-                  overflow: 'hidden',
-                  bgcolor: 'background.paper',
-                  borderRadius: 0,
-                  display: 'flex',
-                  flexDirection: 'column'
-                }}
-              >
-                <Box sx={{
-                  p: 2, 
-                  pb: 1, 
-                  borderBottom: `1px solid ${theme.palette.divider}`,
-                  bgcolor: theme.palette.grey[50]
-                }}>
-                  <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                    <CompareArrowsIcon sx={{ color: 'secondary.main' }}/> 
-                    Differences 
-                    {pageData?.differences && (
-                      <Chip 
-                        icon={<DifferenceIcon />} 
-                        label={`${pageData.differences.filter(d => d.type !== 'equal').length} changes`} 
-                        size="small" 
-                        color="secondary"
-                      />
-                    )}
-                  </Typography>
-                  
-                  {/* Status Indicator */}
-                  {appliedChangesState !== 'none' && (
-                    <Chip 
-                      label={
-                        appliedChangesState === 'ignored' ? 'All Ignored' : 
-                        appliedChangesState === 'replaced' ? 'All Replaced' : 
-                        'Custom Changes'
-                      }
-                      color={
-                        appliedChangesState === 'ignored' ? 'warning' : 
-                        appliedChangesState === 'replaced' ? 'success' : 
-                        'primary'
-                      }
-                      size="small"
-                      variant="filled"
-                      sx={{ mb: 2 }}
-                    />
-                  )}
-                  
-                  {/* IMPROVED: Compact Bulk Operation Buttons */}
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1 }}>
-                    <Tooltip title="Keep current OCR text, ignore all changes">
-                      <span>
-                        <Button 
-                          variant="outlined" 
-                          color="warning"
-                          size="small"
-                          startIcon={<ClearIcon />}
-                          onClick={handleIgnoreAll}
-                          disabled={isEditingTextA || !pageData?.text_a_ocr || appliedChangesState === 'ignored'}
-                          sx={{ 
-                            minWidth: 'auto',
-                            fontSize: '0.75rem',
-                            ...(appliedChangesState === 'ignored' && { 
-                              bgcolor: 'warning.light', 
-                              borderColor: 'warning.main',
-                              color: 'warning.dark'
-                            })
-                          }}
-                        >
-                          {appliedChangesState === 'ignored' ? 'Ignored ✓' : 'Ignore All'}
-                        </Button>
-                      </span>
-                    </Tooltip>
-                    <Tooltip title="Replace all OCR text with Document B">
-                      <span>
-                        <Button 
-                          variant="outlined" 
-                          color="success"
-                          size="small"
-                          startIcon={<CheckCircleIcon />}
-                          onClick={handleReplaceAll}
-                          disabled={isEditingTextA || !pageData?.text_b_editable_pdf || appliedChangesState === 'replaced'}
-                          sx={{ 
-                            minWidth: 'auto',
-                            fontSize: '0.75rem',
-                            ...(appliedChangesState === 'replaced' && { 
-                              bgcolor: 'success.light', 
-                              borderColor: 'success.main',
-                              color: 'success.dark'
-                            })
-                          }}
-                        >
-                          {appliedChangesState === 'replaced' ? 'Replaced ✓' : 'Replace All'}
-                        </Button>
-                      </span>
-                    </Tooltip>
-                    <Button 
-                      variant="outlined" 
-                      color="info"
-                      size="small"
-                      startIcon={<ArrowBackIcon />}
-                      onClick={handleRevertToOriginal}
-                      disabled={isEditingTextA || appliedChangesState === 'none'}
-                      sx={{ 
-                        minWidth: 'auto',
-                        fontSize: '0.75rem'
-                      }}
-                    >
-                      Revert
-                    </Button>
-                  </Box>
-                </Box>
-                
-                {/* ENHANCED: Individual Differences List with Ignore buttons */}
-                <Box sx={{ flexGrow: 1, overflow: 'auto', p: 1 }}>
-                  {pageData?.differences && pageData.differences.length > 0 ? (
-                    <List dense sx={{ p: 0 }}>
-                      {pageData.differences
-                        .filter(diff => diff.type !== 'equal')
-                        .map((diff, index) => (
-                          <ListItem key={index} sx={{ p: 0, mb: 1 }}>
-                            <Card 
-                              variant="outlined" 
-                              sx={{ 
-                                width: '100%',
-                                borderColor: 
-                                  appliedChangesState === 'replaced' ? 'success.main' :
-                                  appliedChangesState === 'ignored' ? 'grey.400' :
-                                  appliedDifferences.has(index) ? 'success.main' :
-                                  ignoredDifferences.has(index) ? 'grey.400' :
-                                  diff.type === 'replace' ? 'warning.main' : 
-                                  diff.type === 'insert' ? 'success.main' : 'error.main',
-                                opacity: (appliedChangesState === 'ignored' || appliedChangesState === 'replaced' || ignoredDifferences.has(index)) ? 0.6 : 1,
-                                '&:hover': { 
-                                  boxShadow: (appliedChangesState === 'ignored' || appliedChangesState === 'replaced' || ignoredDifferences.has(index)) ? 1 : 2
-                                }
-                              }}
-                            >
-                              <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
-                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                                  <Chip 
-                                    label={
-                                      appliedChangesState === 'replaced' ? 'REPLACED' :
-                                      appliedChangesState === 'ignored' ? 'IGNORED' : 
-                                      appliedDifferences.has(index) ? 'APPLIED' :
-                                      ignoredDifferences.has(index) ? 'IGNORED' : 
-                                      diff.type.toUpperCase()
-                                    } 
-                                    size="small"
-                                    color={
-                                      appliedChangesState === 'replaced' ? 'success' :
-                                      appliedChangesState === 'ignored' ? 'default' : 
-                                      appliedDifferences.has(index) ? 'success' :
-                                      ignoredDifferences.has(index) ? 'default' : 
-                                      diff.type === 'replace' ? 'warning' : 
-                                      diff.type === 'insert' ? 'success' : 'error'
-                                    }
-                                  />
-                                  {/* Enhanced Action buttons for each difference */}
-                                  <Box sx={{ display: 'flex', gap: 0.5 }}>
-                                    {appliedDifferences.has(index) && appliedChangesState !== 'replaced' && appliedChangesState !== 'ignored' ? (
-                                      // Show revert button for individually applied differences (not bulk operations)
-                                      <Tooltip title="Revert this change">
-                                        <IconButton 
-                                          size="small" 
-                                          color="warning"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            logFunction('revertDifference', { diff, index });
-                                            revertDifference(diff, index);
-                                          }}
-                                        >
-                                          <ArrowBackIcon fontSize="small" />
-                                        </IconButton>
-                                      </Tooltip>
-                                    ) : (appliedChangesState === 'none' || appliedChangesState === 'custom') && !appliedDifferences.has(index) && !ignoredDifferences.has(index) ? (
-                                      // Show apply/ignore buttons when no bulk operation is active or in custom state and not individually handled
-                                      <>
-                                        {logger.info('ComparisonView', 'ButtonVisibility', `Apply button VISIBLE for index ${index}`, {
-                                          appliedChangesState,
-                                          hasAppliedDiff: appliedDifferences.has(index),
-                                          hasIgnoredDiff: ignoredDifferences.has(index),
-                                          diff
-                                        })}
-                                        <Tooltip title="Apply this change">
-                                          <IconButton 
-                                            size="small" 
-                                            color="success"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              logFunction('applyDifference', { diff, index, appliedChangesState });
-                                              applyDifference(diff, index);
-                                            }}
-                                          >
-                                            <CheckIcon fontSize="small" />
-                                          </IconButton>
-                                        </Tooltip>
-                                        <Tooltip title="Ignore this change">
-                                          <IconButton 
-                                            size="small" 
-                                            color="warning"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              logFunction('ignoreDifference', { diff, index });
-                                              ignoreDifference(diff, index);
-                                            }}
-                                          >
-                                            <BlockIcon fontSize="small" />
-                                          </IconButton>
-                                        </Tooltip>
-                                      </>
-                                    ) : (
-                                      logger.info('ComparisonView', 'ButtonVisibility', `Apply button HIDDEN for index ${index}`, {
-                                        appliedChangesState,
-                                        hasAppliedDiff: appliedDifferences.has(index),
-                                        hasIgnoredDiff: ignoredDifferences.has(index),
-                                        conditionMet: (appliedChangesState === 'none' || appliedChangesState === 'custom') && !appliedDifferences.has(index) && !ignoredDifferences.has(index)
-                                      })
-                                    )}
-                                  </Box>
-                                </Box>
-                                <Box 
-                                  sx={{ cursor: 'pointer' }}
-                                  onClick={() => smartHighlightAndSearch(diff)}
-                                >
-                                  <Box sx={{ mb: 1 }}>
-                                    <Typography variant="caption" color="error" sx={{ fontWeight: 'bold' }}>
-                                      Original (A):
-                                    </Typography>
-                                    <Typography variant="body2" sx={{ 
-                                      bgcolor: 'error.light', 
-                                      p: 1, 
-                                      borderRadius: 1, 
-                                      fontFamily: 'monospace',
-                                      fontSize: '12px',
-                                      wordBreak: 'break-word'
-                                    }}>
-                                      {diff.original_text_a_segment || '(empty)'}
-                                    </Typography>
-                                  </Box>
-                                  <Box>
-                                    <Typography variant="caption" color="success.main" sx={{ fontWeight: 'bold' }}>
-                                      Suggested (B):
-                                    </Typography>
-                                    <Typography variant="body2" sx={{ 
-                                      bgcolor: 'success.light', 
-                                      p: 1, 
-                                      borderRadius: 1, 
-                                      fontFamily: 'monospace',
-                                      fontSize: '12px',
-                                      wordBreak: 'break-word'
-                                    }}>
-                                      {diff.suggested_text_b_segment || '(empty)'}
-                                    </Typography>
-                                  </Box>
-                                </Box>
-                              </CardContent>
-                            </Card>
-                          </ListItem>
-                        ))
-                      }
-                    </List>
-                  ) : (
-                    <Box sx={{ p: 2, textAlign: 'center' }}>
-                      <Typography color="textSecondary">
-                        {pageData?.differences ? 'No differences found between documents.' : 'Loading differences...'}
-                      </Typography>
-                    </Box>
-                  )}
-                </Box>
-              </Paper>
+
+            <PanelResizeHandle style={{ width: '8px', background: '#e0e0e0' }} />
+
+            {/* Differences Panel - MIDDLE */}
+            <Panel defaultSize={differencePanelSize}>
+              <DifferencePanel
+                differences={pageData.differences || []}
+                appliedDifferences={appliedDifferences}
+                ignoredDifferences={ignoredDifferences}
+                onApply={handleApplyDifference}
+                onIgnore={handleIgnoreDifference}
+                onApplyAll={handleApplyAll}
+                onIgnoreAll={handleIgnoreAll}
+                onReset={handleReset}
+                onHighlight={highlightDifference}
+                onClearHighlights={clearHighlights}
+                ref={htmlDiffDisplayRef}
+              />
             </Panel>
-            
-            <PanelResizeHandle style={resizeHandleStyle} />
-            
-            {/* Right panel: Document A (OCR Text - Editable) - MOVED FROM LEFT */}
-            <Panel defaultSize={35}>
-              <Paper 
-                elevation={0} 
-                sx={{ 
-                  height: '100%', 
-                  overflow: 'hidden',
-                  bgcolor: 'background.paper',
-                  borderRadius: 0,
-                  display: 'flex',
-                  flexDirection: 'column'
-                }}
-              >
-                <Box sx={{
-                  display: 'flex', 
-                  justifyContent: 'space-between', 
-                  alignItems: 'center', 
-                  p: 2, 
-                  pb: 1, 
-                  borderBottom: `1px solid ${theme.palette.divider}`,
-                  bgcolor: theme.palette.grey[50]
-                }}>
-                  <Typography variant="h6" sx={{display: 'flex', alignItems: 'center', mb: 0}}>
-                    <TextFieldsIcon sx={{mr:1, color: 'primary.main'}}/> Document A (OCR - Editable)
-                  </Typography>
-                  {!isEditingTextA ? (
-                    <Button 
-                      variant="contained" 
-                      size="small"
-                      startIcon={<EditIcon />} 
-                      onClick={() => setIsEditingTextA(true)} 
-                      disabled={!pageData?.text_a_ocr}
-                    >
-                      Edit
-                    </Button>
-                  ) : (
-                    <Box sx={{ display: 'flex', gap: 1 }}>
-                      <Button 
-                        variant="contained" 
-                        color="success" 
-                        size="small"
-                        startIcon={<SaveIcon />} 
-                        onClick={handleSaveChanges} 
-                        disabled={saving}
-                      >
-                        {saving ? <CircularProgress size={16}/> : 'Save'}
-                      </Button>
-                      <Button 
-                        variant="outlined" 
-                        size="small"
-                        startIcon={<CancelIcon />} 
-                        onClick={() => { 
-                          setIsEditingTextA(false); 
-                          setTextAEditable(pageData?.text_a_ocr || ""); 
-                          setError(null); 
-                        }}
-                      >
-                        Cancel
-                      </Button>
-                    </Box>
-                  )}
-                </Box>
-                <Box sx={{ p: 2, pb: 1 }}>
-                  <TextField 
-                    fullWidth 
-                    variant="outlined" 
-                    size="small" 
-                    placeholder="Search in Document A..." 
-                    value={searchTermA}
-                    onChange={(e) => setSearchTermA(e.target.value)}
-                    InputProps={{endAdornment: <SearchIcon />}}
-                    disabled={!isEditingTextA && !pageData?.text_a_ocr}
-                  />
-                </Box>
-                <Box 
-                  ref={documentARef}
-                  sx={{ flexGrow: 1, p: 2, pt: 0, overflow: 'hidden', display: 'flex' }}
-                >
-                  {/* DEBUG: Log the current state during render */}
-                  {logger.debug('ComparisonView', 'render', 'Edit mode check', { 
-                    isEditingTextA, 
-                    textAEditableLength: textAEditable.length,
-                    hasPageData: !!pageData?.text_a_ocr 
-                  })}
-                  {isEditingTextA ? (
-                    <>
-                      {logger.info('ComparisonView', 'render', 'RENDERING TEXTFIELD (EDIT MODE)', { isEditingTextA })}
-                      <TextField
-                        key={`text-editor-${currentPage}-${textAEditable.length}`}
-                        fullWidth
-                        multiline
-                        variant="outlined"
-                        value={textAEditable}
-                        onChange={(e) => {
-                          setTextAEditable(e.target.value);
-                          if (e.target.value !== originalOcrText && e.target.value !== pageData?.text_b_editable_pdf) {
-                            updatePageState({ appliedChangesState: 'custom' });
-                          }
-                          setHasUnsavedChanges(true);
-                        }}
-                        sx={{ 
-                          height: '100%',
-                          '& .MuiOutlinedInput-root': { 
-                            height: '100%',
-                          }, 
-                          '& .MuiOutlinedInput-input': { 
-                            height: '100% !important', 
-                            overflowY: 'auto',
-                            padding: '12px',
-                            fontFamily: 'monospace',
-                            fontSize: '14px',
-                            whiteSpace: 'pre-wrap'
-                          } 
-                        }}
-                      />
-                    </>
-                  ) : (
-                    <>
-                      {logger.info('ComparisonView', 'render', 'RENDERING FORMATTEDTEXTRENDERER (VIEW MODE)', { 
-                        isEditingTextA,
-                        textAEditablePreview: textAEditable.substring(0, 100) + '...',
-                        textAEditableLength: textAEditable.length
-                      })}
-                      <Box sx={{ 
-                        width: '100%', 
-                        height: '100%', 
-                        overflow: 'auto', 
-                        p: 2, 
-                        border: `1px solid ${theme.palette.divider}`,
-                        borderRadius: 1,
-                        bgcolor: 'grey.50'
-                      }}>
-                        <div data-text-content>
-                          <FormattedTextRenderer 
-                            rawText={textAEditable} 
-                            formattedTextJson={hasUnsavedChanges || appliedChangesState !== 'none' ? null : pageData?.formatted_text_a}
-                            searchTerm={searchTermA} 
-                          />
-                        </div>
-                      </Box>
-                    </>
-                  )}
-                </Box>
-              </Paper>
+
+            <PanelResizeHandle style={{ width: '8px', background: '#e0e0e0' }} />
+
+            {/* Document A Panel (OCR - Editable) - RIGHT */}
+            <Panel defaultSize={documentPanelSize}>
+              <DocumentPanel
+                title="Document A (OCR Text)"
+                content={textAEditable}
+                formattedContent={pageData.formatted_text_a}
+                searchTerm={searchTermA}
+                onSearchChange={setSearchTermA}
+                onContentChange={handleContentChange}
+                ref={documentARef}
+                readOnly={false}
+                position="right"
+                hasUnsavedChanges={hasUnsavedChanges}
+                saving={saving}
+              />
             </Panel>
           </PanelGroup>
-        </Box>
-
-        {/* Pagination */}
-        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
-          <Pagination 
-            count={actualTotalPages} 
-            page={currentPage} 
-            onChange={handlePageChange} 
-            color="primary" 
-            disabled={loading || saving}
-            size="large"
-          />
-        </Box>
-      </Container>
-
-      {/* Confirmation Dialog */}
-      <Dialog open={confirmDialog.open} onClose={cancelConfirmedAction}>
-        <DialogTitle>{confirmDialog.title}</DialogTitle>
-        <DialogContent>
-          <DialogContentText>{confirmDialog.message}</DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={cancelConfirmedAction}>Cancel</Button>
-          <Button onClick={executeConfirmedAction} autoFocus>Confirm</Button>
-        </DialogActions>
-      </Dialog>
+        </Container>
+      </Box>
     </Box>
   );
 };

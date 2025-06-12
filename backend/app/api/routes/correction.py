@@ -9,6 +9,7 @@ from app.db.database import get_db
 from app.db import models
 from app.services.editable_pdf_service import EditablePDFService
 from app.services.text_comparison_service import TextComparisonService
+from app.utils.logging_config import pdf_vision_logger, generate_request_id
 from app.schemas.correction_schemas import (
     EditablePDFUploadResponse,
     PageComparisonResponse,
@@ -180,6 +181,9 @@ async def submit_page_corrections(
     """
     Submits user corrections for a specific page. This updates/creates the 'CorrectedText' entry.
     """
+    request_id = generate_request_id()
+    pdf_vision_logger.log_user_edit_save(request_id, document_id, page_number, payload.corrected_text_for_page)
+    
     try:
         # Validate Document A exists
         doc_a = db.query(models.Document).filter(models.Document.id == document_id).first()

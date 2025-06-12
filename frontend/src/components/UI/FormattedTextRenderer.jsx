@@ -11,6 +11,13 @@ const FormattedTextRenderer = ({
   sx = {}
 }) => {
   
+  // Utility function to strip HTML tags
+  const stripHtmlTags = (html) => {
+    if (!html) return '';
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    return doc.body.textContent?.replace(/\s+/g, ' ').trim() || '';
+  };
+
   // Highlight search terms
   const getHighlightedText = (text, query) => {
     if (!query || query.trim() === '') return text;
@@ -28,8 +35,11 @@ const FormattedTextRenderer = ({
     );
   };
 
+  // Clean the raw text by stripping HTML tags
+  const cleanText = stripHtmlTags(rawText);
+
   // If no text available, show message
-  if (!rawText || rawText.trim() === '') {
+  if (!cleanText || cleanText.trim() === '') {
     return (
       <Typography color="textSecondary" sx={sx}>
         No text available for this page.
@@ -52,8 +62,8 @@ const FormattedTextRenderer = ({
     return (
       <Box sx={sx}>
         {formattedData.blocks.map((block, index) => {
-          const text = block.text || '';
-          const highlightedText = getHighlightedText(text, searchTerm);
+          const blockText = stripHtmlTags(block.text || '');
+          const highlightedText = getHighlightedText(blockText, searchTerm);
           
           return (
             <Typography
@@ -95,29 +105,29 @@ const FormattedTextRenderer = ({
     const processedElements = [];
     
     lines.forEach((line, index) => {
-      let processedLine = line;
+      let processedLine = stripHtmlTags(line); // Strip HTML from each line
       let alignment = 'left';
       let fontSize = 14;
       let fontWeight = 'normal';
       let isIndent = false;
       
       // Process markers
-      if (line.includes('[CENTER]')) {
+      if (processedLine.includes('[CENTER]')) {
         alignment = 'center';
         processedLine = processedLine.replace(/\[CENTER\]/g, '');
       }
-      if (line.includes('[TITLE]')) {
+      if (processedLine.includes('[TITLE]')) {
         fontSize = 18;
         fontWeight = 'bold';
         alignment = 'center';
         processedLine = processedLine.replace(/\[TITLE\]/g, '');
       }
-      if (line.includes('[HEADING]')) {
+      if (processedLine.includes('[HEADING]')) {
         fontSize = 16;
         fontWeight = 'bold';
         processedLine = processedLine.replace(/\[HEADING\]/g, '');
       }
-      if (line.includes('[INDENT]')) {
+      if (processedLine.includes('[INDENT]')) {
         isIndent = true;
         processedLine = processedLine.replace(/\[INDENT\]/g, '');
       }
@@ -154,7 +164,7 @@ const FormattedTextRenderer = ({
 
   return (
     <Box sx={sx}>
-      {processBasicMarkers(rawText)}
+      {processBasicMarkers(cleanText)}
     </Box>
   );
 };
